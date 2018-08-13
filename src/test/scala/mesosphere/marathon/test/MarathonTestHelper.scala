@@ -19,7 +19,7 @@ import mesosphere.marathon.core.leadership.LeadershipModule
 import mesosphere.marathon.core.storage.store.impl.memory.InMemoryPersistenceStore
 import mesosphere.marathon.core.pod.Network
 import mesosphere.marathon.core.task.Task
-import mesosphere.marathon.core.task.tracker.{InstanceTracker, InstanceTrackerModule}
+import mesosphere.marathon.core.task.tracker.InstanceTrackerModule
 import mesosphere.marathon.metrics.dummy.DummyMetrics
 import mesosphere.marathon.raml.{Raml, Resources}
 import mesosphere.marathon.state.Container.Docker
@@ -364,6 +364,7 @@ object MarathonTestHelper {
     assert(validationResult.isSuccess == valid, s"validation errors $validationResult for json:\n$pretty")
   }
 
+  // TODO(karsten): Remove and replace with mock.
   def createTaskTrackerModule(
     leadershipModule: LeadershipModule,
     store: Option[InstanceRepository] = None)(implicit mat: Materializer): InstanceTrackerModule = {
@@ -391,12 +392,6 @@ object MarathonTestHelper {
     UnreachableStrategy.default(),
     None
   )
-
-  def createTaskTracker(
-    leadershipModule: LeadershipModule,
-    store: Option[InstanceRepository] = None)(implicit mat: Materializer): InstanceTracker = {
-    createTaskTrackerModule(leadershipModule, store).instanceTracker
-  }
 
   def persistentVolumeResources(taskId: Task.Id, localVolumeIds: LocalVolumeId*) = localVolumeIds.map { id =>
     Mesos.Resource.newBuilder()

@@ -15,7 +15,6 @@ import mesosphere.marathon.core.instance.{Instance, TestInstanceBuilder}
 import mesosphere.marathon.core.launchqueue.LaunchQueue
 import mesosphere.marathon.core.readiness.ReadinessCheckExecutor
 import mesosphere.marathon.core.task.KillServiceMock
-import mesosphere.marathon.core.task.tracker.InstanceTracker
 import mesosphere.marathon.state._
 import mesosphere.marathon.test.GroupCreation
 import org.mockito.Matchers
@@ -36,12 +35,13 @@ class DeploymentActorTest extends AkkaUnitTest with GroupCreation {
   implicit val defaultTimeout: Timeout = 5.seconds
 
   class Fixture {
-    val tracker: InstanceTracker = mock[InstanceTracker]
-    tracker.setGoal(any, any).returns(Future.successful(Done))
+    val scheduler: scheduling.Scheduler = mock[scheduling.Scheduler]
+    scheduler.stop(any)(any) returns Future.successful(Done)
+    scheduler.decommission(any)(any) returns Future.successful(Done)
 
     val queue: LaunchQueue = mock[LaunchQueue]
     val killService = new KillServiceMock(system)
-    val scheduler: SchedulerActions = mock[SchedulerActions]
+    val schedulerActions: SchedulerActions = mock[SchedulerActions]
     val hcManager: HealthCheckManager = mock[HealthCheckManager]
     val config: DeploymentConfig = mock[DeploymentConfig]
     val readinessCheckExecutor: ReadinessCheckExecutor = mock[ReadinessCheckExecutor]
@@ -59,9 +59,9 @@ class DeploymentActorTest extends AkkaUnitTest with GroupCreation {
       DeploymentActor.props(
         manager,
         killService,
+        schedulerActions,
         scheduler,
         plan,
-        tracker,
         queue,
         hcManager,
         system.eventStream,
@@ -122,18 +122,18 @@ class DeploymentActorTest extends AkkaUnitTest with GroupCreation {
       val plan = DeploymentPlan(origGroup, targetGroup)
 
       queue.purge(any) returns Future.successful(Done)
-      scheduler.startRunSpec(any) returns Future.successful(Done)
-      tracker.setGoal(any, any).returns(Future.successful(Done))
-      tracker.specInstances(Matchers.eq(app1.id))(any[ExecutionContext]) returns Future.successful(Seq(instance1_1, instance1_2))
-      tracker.specInstancesSync(app2.id) returns Seq(instance2_1)
-      tracker.specInstances(Matchers.eq(app2.id))(any[ExecutionContext]) returns Future.successful(Seq(instance2_1))
-      tracker.specInstances(Matchers.eq(app3.id))(any[ExecutionContext]) returns Future.successful(Seq(instance3_1))
-      tracker.specInstances(Matchers.eq(app4.id))(any[ExecutionContext]) returns Future.successful(Seq(instance4_1))
-      tracker.get(instance1_1.instanceId) returns Future.successful(Some(instance1_1))
-      tracker.get(instance1_2.instanceId) returns Future.successful(Some(instance1_2))
-      tracker.get(instance2_1.instanceId) returns Future.successful(Some(instance2_1))
-      tracker.get(instance3_1.instanceId) returns Future.successful(Some(instance3_1))
-      tracker.get(instance4_1.instanceId) returns Future.successful(Some(instance4_1))
+      schedulerActions.startRunSpec(any) returns Future.successful(Done)
+      scheduler.stop(any, any).returns(Future.successful(Done))
+      scheduler.decommission(any, any).returns(Future.successful(Done))
+      scheduler.getInstances(Matchers.eq(app1.id))(any[ExecutionContext]) returns Future.successful(Seq(instance1_1, instance1_2))
+      scheduler.getInstances(Matchers.eq(app2.id))(any) returns Future.successful(Seq(instance2_1))
+      scheduler.getInstances(Matchers.eq(app3.id))(any) returns Future.successful(Seq(instance3_1))
+      scheduler.getInstances(Matchers.eq(app4.id))(any) returns Future.successful(Seq(instance4_1))
+      scheduler.getInstance(Matchers.eq(instance1_1.instanceId))(any) returns Future.successful(Some(instance1_1))
+      scheduler.getInstance(Matchers.eq(instance1_2.instanceId))(any) returns Future.successful(Some(instance1_2))
+      scheduler.getInstance(Matchers.eq(instance2_1.instanceId))(any) returns Future.successful(Some(instance2_1))
+      scheduler.getInstance(Matchers.eq(instance3_1.instanceId))(any) returns Future.successful(Some(instance3_1))
+      scheduler.getInstance(Matchers.eq(instance4_1.instanceId))(any) returns Future.successful(Some(instance4_1))
 
       queue.sync(app2New) returns Future.successful(Done)
       when(queue.add(same(app2New), any[Int])).thenAnswer(new Answer[Future[Done]] {
@@ -173,14 +173,11 @@ class DeploymentActorTest extends AkkaUnitTest with GroupCreation {
       val instance1_1 = TestInstanceBuilder.newBuilder(app.id, version = app.version).addTaskRunning(startedAt = Timestamp.zero).getInstance()
       val instance1_2 = TestInstanceBuilder.newBuilder(app.id, version = app.version).addTaskRunning(startedAt = Timestamp(1000)).getInstance()
 
-      tracker.specInstancesSync(app.id) returns Seq(instance1_1, instance1_2)
-      tracker.get(instance1_1.instanceId) returns Future.successful(Some(instance1_1))
-      tracker.get(instance1_2.instanceId) returns Future.successful(Some(instance1_2))
-      tracker.specInstances(app.id) returns Future.successful(Seq(instance1_1, instance1_2))
+      scheduler.getInstances(Matchers.eq(app.id))(any) returns Future.successful(Seq(instance1_1, instance1_2))
+      scheduler.getInstance(Matchers.eq(instance1_1.instanceId))(any) returns Future.successful(Some(instance1_1))
+      scheduler.getInstance(Matchers.eq(instance1_2.instanceId))(any) returns Future.successful(Some(instance1_2))
 
       val plan = DeploymentPlan("foo", origGroup, targetGroup, List(DeploymentStep(List(RestartApplication(appNew)))), Timestamp.now())
-
-      tracker.list(appNew.id) returns Future.successful(Seq(instance1_1, instance1_2))
 
       queue.sync(appNew) returns Future.successful(Done)
       when(queue.add(same(appNew), any[Int])).thenAnswer(new Answer[Future[Done]] {
@@ -214,7 +211,6 @@ class DeploymentActorTest extends AkkaUnitTest with GroupCreation {
 
       val plan = DeploymentPlan("foo", origGroup, targetGroup, List(DeploymentStep(List(RestartApplication(appNew)))), Timestamp.now())
 
-      tracker.specInstancesSync(app.id) returns Seq.empty[Instance]
       queue.add(app, 2) returns Future.successful(Done)
 
       deploymentActor(managerProbe.ref, plan)
@@ -240,8 +236,7 @@ class DeploymentActorTest extends AkkaUnitTest with GroupCreation {
 
       val plan = DeploymentPlan(original = origGroup, target = targetGroup, toKill = Map(app1.id -> Seq(instance1_2)))
 
-      tracker.setGoal(any, any).returns(Future.successful(Done))
-      tracker.specInstances(Matchers.eq(app1.id))(any[ExecutionContext]) returns Future.successful(Seq(instance1_1, instance1_2, instance1_3))
+      scheduler.getInstances(Matchers.eq(app1.id))(any) returns Future.successful(Seq(instance1_1, instance1_2, instance1_3))
 
       deploymentActor(managerProbe.ref, plan)
 

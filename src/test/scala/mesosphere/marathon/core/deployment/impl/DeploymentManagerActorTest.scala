@@ -16,17 +16,15 @@ import mesosphere.marathon.core.deployment.impl.DeploymentActor.Cancel
 import mesosphere.marathon.core.deployment.impl.DeploymentManagerActor._
 import mesosphere.marathon.core.health.HealthCheckManager
 import mesosphere.marathon.core.launchqueue.LaunchQueue
-import mesosphere.marathon.core.leadership.AlwaysElectedLeadershipModule
 import mesosphere.marathon.core.readiness.ReadinessCheckExecutor
 import mesosphere.marathon.core.storage.store.impl.memory.InMemoryPersistenceStore
 import mesosphere.marathon.core.task.termination.KillService
-import mesosphere.marathon.core.task.tracker.InstanceTracker
 import mesosphere.marathon.metrics.Metrics
 import mesosphere.marathon.metrics.dummy.DummyMetrics
 import mesosphere.marathon.state.AppDefinition
 import mesosphere.marathon.state.PathId._
 import mesosphere.marathon.storage.repository.{AppRepository, DeploymentRepository}
-import mesosphere.marathon.test.{GroupCreation, MarathonTestHelper}
+import mesosphere.marathon.test.GroupCreation
 import org.apache.mesos.SchedulerDriver
 import org.rogach.scallop.ScallopConf
 import org.scalatest.concurrent.Eventually
@@ -192,11 +190,10 @@ class DeploymentManagerActorTest extends AkkaUnitTest with ImplicitSender with G
       verify()
     }
     implicit val ctx: ExecutionContext = ExecutionContext.Implicits.global
-    val taskTracker: InstanceTracker = MarathonTestHelper.createTaskTracker(
-      AlwaysElectedLeadershipModule.forRefFactory(system)
-    )
+    val scheduler: scheduling.Scheduler = mock[scheduling.Scheduler]
+
     val taskKillService: KillService = mock[KillService]
-    val scheduler: SchedulerActions = mock[SchedulerActions]
+    val schedulerActions: SchedulerActions = mock[SchedulerActions]
     val metrics: Metrics = DummyMetrics
     val appRepo: AppRepository = AppRepository.inMemRepository(new InMemoryPersistenceStore(metrics))
     val hcManager: HealthCheckManager = mock[HealthCheckManager]
@@ -209,9 +206,9 @@ class DeploymentManagerActorTest extends AkkaUnitTest with ImplicitSender with G
     def deploymentManager(): TestActorRef[DeploymentManagerActor] = TestActorRef (
       DeploymentManagerActor.props(
         metrics,
-        taskTracker,
         taskKillService,
         launchQueue,
+        schedulerActions,
         scheduler,
         hcManager,
         eventBus,

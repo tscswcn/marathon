@@ -13,7 +13,6 @@ import mesosphere.marathon.core.health.MesosCommandHealthCheck
 import mesosphere.marathon.core.instance.{Instance, TestInstanceBuilder}
 import mesosphere.marathon.core.launchqueue.LaunchQueue
 import mesosphere.marathon.core.readiness.ReadinessCheckExecutor
-import mesosphere.marathon.core.task.tracker.InstanceTracker
 import mesosphere.marathon.state.PathId._
 import mesosphere.marathon.state.{AppDefinition, Command}
 import org.scalatest.concurrent.Eventually
@@ -29,7 +28,7 @@ class TaskStartActorTest extends AkkaUnitTest with Eventually {
       val promise = Promise[Unit]()
       val app = AppDefinition("/myApp".toPath, instances = 5)
 
-      f.taskTracker.specInstances(eq(app.id))(any) returns Future.successful(Seq.empty)
+      f.scheduler.getInstances(eq(app.id))(any) returns Future.successful(Seq.empty)
       val ref = f.startActor(app, app.instances, promise)
       watch(ref)
 
@@ -49,7 +48,7 @@ class TaskStartActorTest extends AkkaUnitTest with Eventually {
       val app = AppDefinition("/myApp".toPath, instances = 5)
 
       val instances: Seq[Instance] = Seq(Instance.scheduled(app))
-      f.taskTracker.specInstances(eq(app.id))(any) returns Future.successful(instances)
+      f.scheduler.getInstances(eq(app.id))(any) returns Future.successful(instances)
 
       val ref = f.startActor(app, app.instances, promise)
       watch(ref)
@@ -70,7 +69,7 @@ class TaskStartActorTest extends AkkaUnitTest with Eventually {
       val app = AppDefinition("/myApp".toPath, instances = 5)
 
       val instances: Seq[Instance] = Seq(TestInstanceBuilder.newBuilder(app.id).addTaskRunning().getInstance())
-      f.taskTracker.specInstances(eq(app.id))(any) returns Future.successful(instances)
+      f.scheduler.getInstances(eq(app.id))(any) returns Future.successful(instances)
 
       val ref = f.startActor(app, app.instances, promise)
       watch(ref)
@@ -90,7 +89,7 @@ class TaskStartActorTest extends AkkaUnitTest with Eventually {
       val promise = Promise[Unit]()
       val app = AppDefinition("/myApp".toPath, instances = 0)
 
-      f.taskTracker.specInstances(eq(app.id))(any) returns Future.successful(Seq.empty)
+      f.scheduler.getInstances(eq(app.id))(any) returns Future.successful(Seq.empty)
 
       val ref = f.startActor(app, app.instances, promise)
       watch(ref)
@@ -108,7 +107,7 @@ class TaskStartActorTest extends AkkaUnitTest with Eventually {
         instances = 5,
         healthChecks = Set(MesosCommandHealthCheck(command = Command("true")))
       )
-      f.taskTracker.specInstances(eq(app.id))(any) returns Future.successful(Seq.empty)
+      f.scheduler.getInstances(eq(app.id))(any) returns Future.successful(Seq.empty)
 
       val ref = f.startActor(app, app.instances, promise)
       watch(ref)
@@ -131,7 +130,7 @@ class TaskStartActorTest extends AkkaUnitTest with Eventually {
         instances = 0,
         healthChecks = Set(MesosCommandHealthCheck(command = Command("true")))
       )
-      f.taskTracker.specInstances(eq(app.id))(any) returns Future.successful(Seq.empty)
+      f.scheduler.getInstances(eq(app.id))(any) returns Future.successful(Seq.empty)
 
       val ref = f.startActor(app, app.instances, promise)
       watch(ref)
@@ -146,7 +145,7 @@ class TaskStartActorTest extends AkkaUnitTest with Eventually {
       val promise = Promise[Unit]()
       val app = AppDefinition("/myApp".toPath, instances = 1)
 
-      f.taskTracker.specInstances(eq(app.id))(any) returns Future.successful(Seq.empty)
+      f.scheduler.getInstances(eq(app.id))(any) returns Future.successful(Seq.empty)
 
       val ref = f.startActor(app, app.instances, promise)
       watch(ref)
@@ -189,9 +188,8 @@ class TaskStartActorTest extends AkkaUnitTest with Eventually {
 
   class Fixture {
 
-    val scheduler: SchedulerActions = mock[SchedulerActions]
+    val scheduler: scheduling.Scheduler = mock[scheduling.Scheduler]
     val launchQueue: LaunchQueue = mock[LaunchQueue]
-    val taskTracker: InstanceTracker = mock[InstanceTracker]
     val deploymentManager = TestProbe()
     val status: DeploymentStatus = mock[DeploymentStatus]
     val readinessCheckExecutor: ReadinessCheckExecutor = mock[ReadinessCheckExecutor]
@@ -210,7 +208,7 @@ class TaskStartActorTest extends AkkaUnitTest with Eventually {
 
     def startActor(app: AppDefinition, scaleTo: Int, promise: Promise[Unit]): TestActorRef[TaskStartActor] =
       TestActorRef(childSupervisor(TaskStartActor.props(
-        deploymentManager.ref, status, scheduler, launchQueue, taskTracker, system.eventStream, readinessCheckExecutor,
+        deploymentManager.ref, status, scheduler, launchQueue, system.eventStream, readinessCheckExecutor,
         app, scaleTo, promise), "Test-TaskStartActor"))
 
     // Prevents the TaskActor from restarting too many times (filling the log with exceptions) similar to how it's

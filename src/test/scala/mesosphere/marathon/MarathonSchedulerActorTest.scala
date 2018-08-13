@@ -480,6 +480,11 @@ class MarathonSchedulerActorTest extends AkkaUnitTest with ImplicitSender with G
     val queue: LaunchQueue = mock[LaunchQueue]
     queue.add(any, any) returns Future.successful(Done)
 
+    val scheduler = mock[scheduling.Scheduler]
+    scheduler.getInstances(any)(any) returns Future.successful(Seq.empty[Instance])
+    scheduler.stop(any)(any) returns Future.successful(Done)
+    scheduler.decommission(any)(any) returns Future.successful(Done)
+
     val frameworkIdRepo: FrameworkIdRepository = mock[FrameworkIdRepository]
     val driver: SchedulerDriver = mock[SchedulerDriver]
     val holder: MarathonSchedulerDriverHolder = new MarathonSchedulerDriverHolder
@@ -503,10 +508,10 @@ class MarathonSchedulerActorTest extends AkkaUnitTest with ImplicitSender with G
 
     val deploymentManagerActor = system.actorOf(DeploymentManagerActor.props(
       metrics,
-      instanceTracker,
       killService,
       queue,
       schedulerActions,
+      scheduler,
       hcManager,
       system.eventStream,
       readinessCheckExecutor,

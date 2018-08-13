@@ -9,7 +9,6 @@ import com.typesafe.scalalogging.StrictLogging
 import mesosphere.marathon.core.event.DeploymentStatus
 import mesosphere.marathon.core.launchqueue.LaunchQueue
 import mesosphere.marathon.core.readiness.ReadinessCheckExecutor
-import mesosphere.marathon.core.task.tracker.InstanceTracker
 import mesosphere.marathon.state.RunSpec
 
 import scala.async.Async.{async, await}
@@ -19,9 +18,8 @@ import scala.concurrent.ExecutionContext.Implicits.global
 class TaskStartActor(
     val deploymentManagerActor: ActorRef,
     val status: DeploymentStatus,
-    val scheduler: SchedulerActions,
+    val scheduler: scheduling.Scheduler,
     val launchQueue: LaunchQueue,
-    val instanceTracker: InstanceTracker,
     val eventBus: EventStream,
     val readinessCheckExecutor: ReadinessCheckExecutor,
     val runSpec: RunSpec,
@@ -29,7 +27,7 @@ class TaskStartActor(
     promise: Promise[Unit]) extends Actor with StrictLogging with StartingBehavior {
 
   override val nrToStart: Future[Int] = async {
-    val instances = await(instanceTracker.specInstances(runSpec.id))
+    val instances = await(scheduler.getInstances(runSpec.id))
     val alreadyLaunched = instances.count { i => i.isActive || i.isScheduled }
     val target = Math.max(0, scaleTo - alreadyLaunched)
     logger.info(s"TaskStartActor about to start $target instances. $alreadyLaunched already launched, $scaleTo is target count")
@@ -61,15 +59,14 @@ object TaskStartActor {
   def props(
     deploymentManager: ActorRef,
     status: DeploymentStatus,
-    scheduler: SchedulerActions,
+    scheduler: scheduling.Scheduler,
     launchQueue: LaunchQueue,
-    instanceTracker: InstanceTracker,
     eventBus: EventStream,
     readinessCheckExecutor: ReadinessCheckExecutor,
     runSpec: RunSpec,
     scaleTo: Int,
     promise: Promise[Unit]): Props = {
-    Props(new TaskStartActor(deploymentManager, status, scheduler, launchQueue, instanceTracker,
+    Props(new TaskStartActor(deploymentManager, status, scheduler, launchQueue,
       eventBus, readinessCheckExecutor, runSpec, scaleTo, promise)
     )
   }
