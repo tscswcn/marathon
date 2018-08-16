@@ -9,7 +9,6 @@ import mesosphere.marathon.core.health.HealthCheckManager
 import mesosphere.marathon.core.launchqueue.LaunchQueue
 import mesosphere.marathon.core.leadership.LeadershipModule
 import mesosphere.marathon.core.readiness.ReadinessCheckExecutor
-import mesosphere.marathon.core.task.termination.KillService
 import mesosphere.marathon.metrics.Metrics
 import mesosphere.marathon.scheduling.SchedulingModule
 import mesosphere.marathon.storage.repository.DeploymentRepository
@@ -23,19 +22,17 @@ class DeploymentModule(
     config: DeploymentConfig,
     leadershipModule: LeadershipModule,
     schedulingModule: SchedulingModule,
-    killService: KillService,
     launchQueue: LaunchQueue,
     schedulerActions: SchedulerActions,
     healthCheckManager: HealthCheckManager,
     eventBus: EventStream,
     readinessCheckExecutor: ReadinessCheckExecutor,
     deploymentRepository: DeploymentRepository,
-    deploymentActorProps: (ActorRef, KillService, SchedulerActions, scheduling.Scheduler, DeploymentPlan, LaunchQueue, HealthCheckManager, EventStream, ReadinessCheckExecutor) => Props = DeploymentActor.props)(implicit val mat: Materializer) {
+    deploymentActorProps: (ActorRef, SchedulerActions, scheduling.Scheduler, DeploymentPlan, LaunchQueue, HealthCheckManager, EventStream, ReadinessCheckExecutor) => Props = DeploymentActor.props)(implicit val mat: Materializer) {
 
   private[this] val deploymentManagerActorRef: ActorRef = {
     val props = DeploymentManagerActor.props(
       metrics,
-      killService,
       launchQueue,
       schedulerActions,
       schedulingModule.scheduler,

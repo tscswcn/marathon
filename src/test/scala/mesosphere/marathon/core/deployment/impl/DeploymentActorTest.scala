@@ -14,13 +14,14 @@ import mesosphere.marathon.core.health.HealthCheckManager
 import mesosphere.marathon.core.instance.{Instance, TestInstanceBuilder}
 import mesosphere.marathon.core.launchqueue.LaunchQueue
 import mesosphere.marathon.core.readiness.ReadinessCheckExecutor
-import mesosphere.marathon.core.task.KillServiceMock
+import mesosphere.marathon.core.task.termination.KillReason
 import mesosphere.marathon.state._
 import mesosphere.marathon.test.GroupCreation
 import org.mockito.Matchers
 import org.mockito.Mockito.when
 import org.mockito.invocation.InvocationOnMock
 import org.mockito.stubbing.Answer
+import org.scalatest.concurrent.Eventually
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
@@ -30,17 +31,17 @@ import scala.util.Success
 // setup which makes the test overly complicated because events etc have to be mocked for these.
 // The way forward should be to provide factories that create the child actors with a given context, or
 // to use delegates that hide the implementation behind a mockable function call.
-class DeploymentActorTest extends AkkaUnitTest with GroupCreation {
+class DeploymentActorTest extends AkkaUnitTest with GroupCreation with Eventually {
 
   implicit val defaultTimeout: Timeout = 5.seconds
 
   class Fixture {
     val scheduler: scheduling.Scheduler = mock[scheduling.Scheduler]
-    scheduler.stop(any)(any) returns Future.successful(Done)
-    scheduler.decommission(any)(any) returns Future.successful(Done)
+    scheduler.stop(any[Seq[Instance]], any)(any) returns Future.successful(Done)
+    scheduler.decommission(any[Seq[Instance]], any)(any) returns Future.successful(Done)
+    scheduler.decommission(any[Instance], any)(any) returns Future.successful(Done)
 
     val queue: LaunchQueue = mock[LaunchQueue]
-    val killService = new KillServiceMock(system)
     val schedulerActions: SchedulerActions = mock[SchedulerActions]
     val hcManager: HealthCheckManager = mock[HealthCheckManager]
     val config: DeploymentConfig = mock[DeploymentConfig]
@@ -55,10 +56,14 @@ class DeploymentActorTest extends AkkaUnitTest with GroupCreation {
       InstanceChanged(instanceId, app.version, app.id, condition, instance)
     }
 
+    def instanceKilled(instance: Instance): InstanceChanged = {
+      val updatedInstance = instance.copy(state = instance.state.copy(condition = Condition.Killed))
+      InstanceChanged(instance.instanceId, instance.runSpecVersion, instance.runSpecId, Condition.Killed, instance)
+    }
+
     def deploymentActor(manager: ActorRef, plan: DeploymentPlan) = system.actorOf(
       DeploymentActor.props(
         manager,
-        killService,
         schedulerActions,
         scheduler,
         plan,
@@ -123,8 +128,6 @@ class DeploymentActorTest extends AkkaUnitTest with GroupCreation {
 
       queue.purge(any) returns Future.successful(Done)
       schedulerActions.startRunSpec(any) returns Future.successful(Done)
-      scheduler.stop(any, any).returns(Future.successful(Done))
-      scheduler.decommission(any, any).returns(Future.successful(Done))
       scheduler.getInstances(Matchers.eq(app1.id))(any[ExecutionContext]) returns Future.successful(Seq(instance1_1, instance1_2))
       scheduler.getInstances(Matchers.eq(app2.id))(any) returns Future.successful(Seq(instance2_1))
       scheduler.getInstances(Matchers.eq(app3.id))(any) returns Future.successful(Seq(instance3_1))
@@ -149,15 +152,24 @@ class DeploymentActorTest extends AkkaUnitTest with GroupCreation {
         case (step, num) => managerProbe.expectMsg(7.seconds, DeploymentStepInfo(plan, step, num + 1))
       }
 
+      eventually {
+        verify(scheduler).decommission(Matchers.eq(instance1_2), any[KillReason])(any)
+      }
+      system.eventStream.publish(instanceKilled(instance1_2))
+
+      eventually {
+        verify(scheduler).decommission(Matchers.eq(instance2_1), any[KillReason])(any)
+      }
+      system.eventStream.publish(instanceKilled(instance2_1))
+
+      eventually {
+        verify(scheduler).decommission(Matchers.eq(instance4_1), any[KillReason])(any)
+      }
+      system.eventStream.publish(instanceKilled(instance4_1))
+
       managerProbe.expectMsg(5.seconds, DeploymentFinished(plan, Success(Done)))
 
-      withClue(killService.killed.mkString(",")) {
-        killService.killed should contain(instance1_2.instanceId) // killed due to scale down
-        killService.killed should contain(instance2_1.instanceId) // killed due to config change
-        killService.killed should contain(instance4_1.instanceId) // killed because app4 does not exist anymore
-        killService.numKilled should be(3)
-        verify(queue).resetDelay(app4.copy(instances = 0))
-      }
+      verify(queue).resetDelay(app4.copy(instances = 0))
     }
 
     "Restart app" in new Fixture {
@@ -192,10 +204,19 @@ class DeploymentActorTest extends AkkaUnitTest with GroupCreation {
       plan.steps.zipWithIndex.foreach {
         case (step, num) => managerProbe.expectMsg(5.seconds, DeploymentStepInfo(plan, step, num + 1))
       }
+
+      eventually {
+        verify(scheduler).decommission(Matchers.eq(instance1_1), any[KillReason])(any)
+      }
+      system.eventStream.publish(instanceKilled(instance1_1))
+
+      eventually {
+        verify(scheduler).decommission(Matchers.eq(instance1_2), any[KillReason])(any)
+      }
+      system.eventStream.publish(instanceKilled(instance1_2))
+
       managerProbe.expectMsg(5.seconds, DeploymentFinished(plan, Success(Done)))
 
-      killService.killed should contain(instance1_1.instanceId)
-      killService.killed should contain(instance1_2.instanceId)
       verify(queue).add(appNew, 2)
     }
 
@@ -240,14 +261,16 @@ class DeploymentActorTest extends AkkaUnitTest with GroupCreation {
 
       deploymentActor(managerProbe.ref, plan)
 
+      eventually {
+        verify(scheduler).decommission(Matchers.eq(instance1_2), any[KillReason])(any)
+      }
+      system.eventStream.publish(instanceKilled(instance1_2))
+
       plan.steps.zipWithIndex.foreach {
         case (step, num) => managerProbe.expectMsg(5.seconds, DeploymentStepInfo(plan, step, num + 1))
       }
 
       managerProbe.expectMsg(5.seconds, DeploymentFinished(plan, Success(Done)))
-
-      killService.numKilled should be(1)
-      killService.killed should contain(instance1_2.instanceId)
     }
   }
 }

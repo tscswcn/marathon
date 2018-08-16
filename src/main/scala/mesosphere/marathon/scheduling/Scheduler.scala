@@ -4,6 +4,7 @@ package scheduling
 import akka.Done
 import mesosphere.marathon.core.instance.Instance
 import mesosphere.marathon.core.launcher.OfferProcessor
+import mesosphere.marathon.core.task.termination.KillReason
 import mesosphere.marathon.state.PathId
 import org.apache.mesos.Protos
 
@@ -36,33 +37,35 @@ trait Scheduler extends OfferProcessor {
     *
     * This method is idempotent.
     *
-    * @param instanceIds
+    * @param instances
     * @param ec
     * @return
     */
-  def run(instanceIds: Instance.Id*)(implicit ec: ExecutionContext): Future[Done]
+  def run(instances: Seq[Instance])(implicit ec: ExecutionContext): Future[Done]
 
   /**
     * Stop instances with give ids but keep them in store.
     *
     * This method is idempotent.
     *
-    * @param instanceIds The identifiers of the instances that should be stopped.
+    * @param instances The instances that should be stopped.
     * @param ec
     * @return Done when successful.
     */
-  def stop(instanceIds: Instance.Id*)(implicit ec: ExecutionContext): Future[Done]
+  def stop(instances: Seq[Instance], killReason: KillReason)(implicit ec: ExecutionContext): Future[Done]
+  def stop(instance: Instance, killReason: KillReason)(implicit ec: ExecutionContext): Future[Done] = stop(Seq(instance), killReason)
 
   /**
     * Stop and remove instances with given ids. This will also free all reservations.
     *
     * This method is idempotent.
     *
-    * @param instanceIds The identifiers of the instances that should be decommissioned.
+    * @param instances The instances that should be decommissioned.
     * @param ec
     * @return Done when successful.
     */
-  def decommission(instanceIds: Instance.Id*)(implicit ec: ExecutionContext): Future[Done]
+  def decommission(instances: Seq[Instance], killReason: KillReason)(implicit ec: ExecutionContext): Future[Done]
+  def decommission(instance: Instance, killReason: KillReason)(implicit ec: ExecutionContext): Future[Done] = decommission(Seq(instance), killReason)
 
   /**
     * Handle a Mesos offer, e.g. free reservations or match an offer to launch instances.

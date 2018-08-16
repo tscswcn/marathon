@@ -14,7 +14,8 @@ import mesosphere.marathon.core.health.{MarathonHttpHealthCheck, PortReference}
 import mesosphere.marathon.core.instance.{Instance, TestInstanceBuilder}
 import mesosphere.marathon.core.launchqueue.LaunchQueue
 import mesosphere.marathon.core.readiness.{ReadinessCheck, ReadinessCheckExecutor, ReadinessCheckResult}
-import mesosphere.marathon.core.task.{KillServiceMock, Task}
+import mesosphere.marathon.core.task.termination.KillReason
+import mesosphere.marathon.core.task.Task
 import mesosphere.marathon.state.PathId._
 import mesosphere.marathon.state._
 import mesosphere.marathon.util.CancellableOnce
@@ -47,12 +48,18 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
       val ref = f.replaceActor(newApp, promise)
       watch(ref)
 
+      ref ! f.instanceKilled(instanceA)
+      ref ! f.instanceKilled(instanceB)
+
       for (_ <- 0 until newApp.instances)
         ref ! f.instanceChanged(newApp, Running)
 
       promise.future.futureValue
-      f.killService.killed should contain(instanceA.instanceId)
-      f.killService.killed should contain(instanceB.instanceId)
+
+      eventually {
+        verify(f.scheduler).decommission(eq[Instance](instanceA), any)(any)
+        verify(f.scheduler).decommission(eq[Instance](instanceB), any)(any)
+      }
 
       expectTerminated(ref)
     }
@@ -81,13 +88,17 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
       val ref = f.replaceActor(newApp, promise)
       watch(ref)
 
+      ref ! f.instanceKilled(instanceA)
+
       // Report all remaining instances as running.
       for (_ <- 0 until (newApp.instances - 1))
         ref ! f.instanceChanged(newApp, Running)
 
       promise.future.futureValue
-      f.killService.killed should contain(instanceA.instanceId)
-      f.killService.killed should not contain instanceC.instanceId
+
+      eventually {
+        verify(f.scheduler).decommission(eq[Instance](instanceA), any)(any)
+      }
 
       expectTerminated(ref)
     }
@@ -116,13 +127,18 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
       val ref = f.replaceActor(newApp, promise)
       watch(ref)
 
+      ref ! f.instanceKilled(instanceA)
+      ref ! f.instanceKilled(instanceB)
+
       for (_ <- 0 until newApp.instances)
         ref ! f.healthChanged(newApp, healthy = true)
 
       promise.future.futureValue
       verify(f.queue).resetDelay(newApp)
-      f.killService.killed should contain(instanceA.instanceId)
-      f.killService.killed should contain(instanceB.instanceId)
+      eventually {
+        verify(f.scheduler).decommission(eq[Instance](instanceA), any)(any)
+        verify(f.scheduler).decommission(eq[Instance](instanceB), any)(any)
+      }
 
       expectTerminated(ref)
     }
@@ -152,22 +168,24 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
       watch(ref)
 
       eventually {
-        f.killService.numKilled should be(1)
+        verify(f.scheduler, times(1)).decommission(any[Instance], any[KillReason])(any)
       }
+      ref ! f.instanceKilled(instanceA)
 
       ref ! f.instanceChanged(newApp, Running)
       eventually {
-        f.killService.numKilled should be(2)
+        verify(f.scheduler, times(2)).decommission(any[Instance], any[KillReason])(any)
       }
+      ref ! f.instanceKilled(instanceB)
 
       ref ! f.instanceChanged(newApp, Running)
       eventually { app: AppDefinition => verify(f.queue, times(2)).add(app) }
 
-      promise.future.futureValue
-
       eventually {
-        f.killService.numKilled should be(3)
+        verify(f.scheduler, times(3)).decommission(any[Instance], any[KillReason])(any)
       }
+      ref ! f.instanceKilled(instanceC)
+
       verify(f.queue).resetDelay(newApp)
 
       expectTerminated(ref)
@@ -204,31 +222,28 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
 
       // ceiling(minimumHealthCapacity * 3) = 2 are left running
       eventually{
-        f.killService.numKilled should be(1)
+        verify(f.scheduler, times(1)).decommission(any[Instance], any[KillReason])(any)
       }
+      ref ! f.instanceKilled(instanceA)
 
       // first new task becomes healthy and another old task is killed
       ref ! f.healthChanged(newApp, healthy = true)
       eventually {
-        f.killService.numKilled should be(2)
+        verify(f.scheduler, times(2)).decommission(any[Instance], any[KillReason])(any)
       }
+      ref ! f.instanceKilled(instanceB)
 
       // second new task becomes healthy and the last old task is killed
       ref ! f.healthChanged(newApp, healthy = true)
       eventually {
-        f.killService.numKilled should be(3)
+        verify(f.scheduler, times(3)).decommission(any[Instance], any[KillReason])(any)
       }
+      ref ! f.instanceKilled(instanceC)
 
       // third new task becomes healthy
       ref ! f.healthChanged(newApp, healthy = true)
-      f.killService.numKilled should be(3)
 
       promise.future.futureValue
-
-      // all old tasks are killed
-      f.killService.killed should contain(instanceA.instanceId)
-      f.killService.killed should contain(instanceB.instanceId)
-      f.killService.killed should contain(instanceC.instanceId)
 
       expectTerminated(ref)
     }
@@ -267,14 +282,17 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
 
       // ceiling(minimumHealthCapacity * 3) = 2 are left running
       eventually {
-        f.killService.numKilled should be(1)
+        verify(f.scheduler, times(1)).decommission(any[Instance], any[KillReason])(any)
       }
+      ref ! f.instanceKilled(instanceA)
 
       // first new task becomes healthy and another old task is killed
       ref ! f.healthChanged(newApp, healthy = true)
       eventually {
-        f.killService.numKilled should be(2)
+        verify(f.scheduler, times(2)).decommission(any[Instance], any[KillReason])(any)
       }
+      ref ! f.instanceKilled(instanceB)
+
       eventually {
         queueOrder.verify(f.queue).add(_: AppDefinition, 1)
       }
@@ -282,8 +300,10 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
       // second new task becomes healthy and the last old task is killed
       ref ! f.healthChanged(newApp, healthy = true)
       eventually {
-        f.killService.numKilled should be(3)
+        verify(f.scheduler, times(3)).decommission(any[Instance], any[KillReason])(any)
       }
+      ref ! f.instanceKilled(instanceC)
+
       eventually {
         queueOrder.verify(f.queue).add(_: AppDefinition, 1)
       }
@@ -291,16 +311,13 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
       // third new task becomes healthy
       ref ! f.healthChanged(newApp, healthy = true)
       eventually {
-        f.killService.numKilled should be(3)
+        verify(f.scheduler, times(3)).decommission(any[Instance], any[KillReason])(any)
       }
 
       promise.future.futureValue
 
       // all old tasks are killed
       verify(f.queue).resetDelay(newApp)
-      f.killService.killed should contain(instanceA.instanceId)
-      f.killService.killed should contain(instanceB.instanceId)
-      f.killService.killed should contain(instanceC.instanceId)
 
       expectTerminated(ref)
     }
@@ -337,15 +354,15 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
         queueOrder.verify(f.queue).add(_: AppDefinition, 1)
       }
 
-      eventually {
-        f.killService.numKilled should be(0)
-      }
+      verify(f.scheduler, times(0)).decommission(any[Instance], any[KillReason])(any)
 
       // first new task becomes healthy and another old task is killed
       ref ! f.healthChanged(newApp, healthy = true)
       eventually {
-        f.killService.numKilled should be(1)
+        verify(f.scheduler, times(1)).decommission(any[Instance], any[KillReason])(any)
       }
+      ref ! f.instanceKilled(instanceA)
+
       eventually {
         queueOrder.verify(f.queue).add(_: AppDefinition, 1)
       }
@@ -353,8 +370,10 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
       // second new task becomes healthy and another old task is killed
       ref ! f.healthChanged(newApp, healthy = true)
       eventually {
-        f.killService.numKilled should be(2)
+        verify(f.scheduler, times(2)).decommission(any[Instance], any[KillReason])(any)
       }
+      ref ! f.instanceKilled(instanceB)
+
       eventually {
         queueOrder.verify(f.queue).add(_: AppDefinition, 1)
       }
@@ -362,16 +381,13 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
       // third new task becomes healthy and last old task is killed
       ref ! f.healthChanged(newApp, healthy = true)
       eventually {
-        f.killService.numKilled should be(3)
+        verify(f.scheduler, times(3)).decommission(any[Instance], any[KillReason])(any)
       }
+      ref ! f.instanceKilled(instanceC)
+
       queueOrder.verify(f.queue, never).add(_: AppDefinition, 1)
 
       promise.future.futureValue
-
-      // all old tasks are killed
-      f.killService.killed should contain(instanceA.instanceId)
-      f.killService.killed should contain(instanceB.instanceId)
-      f.killService.killed should contain(instanceC.instanceId)
 
       expectTerminated(ref)
     }
@@ -407,13 +423,15 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
       eventually {
         queueOrder.verify(f.queue).add(_: AppDefinition, 2)
       }
-      assert(f.killService.numKilled == 0)
+      verify(f.scheduler, times(0)).decommission(any[Instance], any[KillReason])(any)
 
       // first new task becomes healthy and another old task is killed
       ref ! f.healthChanged(newApp, healthy = true)
       eventually {
-        f.killService.numKilled should be(1)
+        verify(f.scheduler, times(1)).decommission(any[Instance], any[KillReason])(any)
       }
+      ref ! f.instanceKilled(instanceA)
+
       eventually {
         queueOrder.verify(f.queue).add(_: AppDefinition, 1)
       }
@@ -421,23 +439,22 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
       // second new task becomes healthy and another old task is killed
       ref ! f.healthChanged(newApp, healthy = true)
       eventually {
-        f.killService.numKilled should be(2)
+        verify(f.scheduler, times(2)).decommission(any[Instance], any[KillReason])(any)
       }
+      ref ! f.instanceKilled(instanceB)
+
       queueOrder.verify(f.queue, never).add(_: AppDefinition, 1)
 
       // third new task becomes healthy and last old task is killed
       ref ! f.healthChanged(newApp, healthy = true)
       eventually {
-        f.killService.numKilled should be(3)
+        verify(f.scheduler, times(3)).decommission(any[Instance], any[KillReason])(any)
       }
+      ref ! f.instanceKilled(instanceC)
+
       queueOrder.verify(f.queue, never).add(_: AppDefinition, 1)
 
       promise.future.futureValue
-
-      // all old tasks are killed
-      f.killService.killed should contain(instanceA.instanceId)
-      f.killService.killed should contain(instanceB.instanceId)
-      f.killService.killed should contain(instanceC.instanceId)
 
       expectTerminated(ref)
     }
@@ -473,8 +490,9 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
 
       // one task is killed directly because we are over capacity
       eventually {
-        f.killService.killed should contain(instanceA.instanceId)
+        verify(f.scheduler).decommission(eq[Instance](instanceA), any[KillReason])(any)
       }
+      ref ! f.instanceKilled(instanceA)
 
       // the kill is confirmed (see answer above) and the first new task is queued
       eventually {
@@ -483,14 +501,16 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
       }
 
       eventually {
-        f.killService.numKilled should be(1)
+        verify(f.scheduler, times(1)).decommission(any[Instance], any[KillReason])(any)
       }
 
       // first new task becomes healthy and another old task is killed
       ref ! f.healthChanged(newApp, healthy = true)
       eventually {
-        f.killService.numKilled should be(2)
+        verify(f.scheduler).decommission(eq[Instance](instanceB), any[KillReason])(any)
       }
+      ref ! f.instanceKilled(instanceB)
+
       eventually {
         verify(f.queue, times(2)).add(newApp, 1)
       }
@@ -498,8 +518,10 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
       // second new task becomes healthy and another old task is killed
       ref ! f.healthChanged(newApp, healthy = true)
       eventually {
-        f.killService.numKilled should be(3)
+        verify(f.scheduler).decommission(eq[Instance](instanceC), any[KillReason])(any)
       }
+      ref ! f.instanceKilled(instanceC)
+
       eventually {
         verify(f.queue, times(3)).add(newApp, 1)
       }
@@ -507,15 +529,11 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
       // third new task becomes healthy and last old task is killed
       ref ! f.healthChanged(newApp, healthy = true)
       eventually {
-        f.killService.numKilled should be(4)
+        verify(f.scheduler).decommission(eq[Instance](instanceD), any[KillReason])(any)
       }
+      ref ! f.instanceKilled(instanceD)
 
       promise.future.futureValue
-
-      // all remaining old tasks are killed
-      f.killService.killed should contain(instanceB.instanceId)
-      f.killService.killed should contain(instanceC.instanceId)
-      f.killService.killed should contain(instanceD.instanceId)
 
       verify(f.queue, times(3)).add(newApp, 1)
 
@@ -617,15 +635,20 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
       val ref = f.replaceActor(newApp, promise)
       watch(ref)
 
+      ref ! f.instanceKilled(instanceA)
+      ref ! f.instanceKilled(instanceB)
+
       for (_ <- 0 until newApp.instances)
         ref ! f.instanceChanged(newApp, Running)
+
+      eventually {
+        verify(f.scheduler).decommission(eq[Instance](instanceA), any[KillReason])(any)
+        verify(f.scheduler).decommission(eq[Instance](instanceB), any[KillReason])(any)
+      }
 
       verify(f.queue, timeout(1000)).resetDelay(newApp)
 
       promise.future.futureValue
-
-      f.killService.killed should contain(instanceA.instanceId)
-      f.killService.killed should contain(instanceB.instanceId)
     }
 
     "Tasks to replace need to wait for health and readiness checks" in {
@@ -656,7 +679,7 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
       eventually {
         queueOrder.verify(f.queue).add(_: AppDefinition, 1)
       }
-      assert(f.killService.numKilled == 0)
+      verify(f.scheduler, times(0)).decommission(any[Instance], any[KillReason])(any)
 
       val newTaskId = Task.Id.forRunSpec(newApp.id)
       val newInstanceId = newTaskId.instanceId
@@ -664,26 +687,27 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
       //unhealthy
       ref ! InstanceHealthChanged(newInstanceId, newApp.version, newApp.id, healthy = Some(false))
       eventually {
-        f.killService.numKilled should be(0)
+        verify(f.scheduler, times(0)).decommission(any[Instance], any[KillReason])(any)
       }
 
       //unready
       ref ! ReadinessCheckResult(ReadinessCheck.DefaultName, newTaskId, ready = false, None)
       eventually {
-        f.killService.numKilled should be(0)
+        verify(f.scheduler, times(0)).decommission(any[Instance], any[KillReason])(any)
       }
 
       //healthy
       ref ! InstanceHealthChanged(newInstanceId, newApp.version, newApp.id, healthy = Some(true))
       eventually {
-        f.killService.numKilled should be(0)
+        verify(f.scheduler, times(0)).decommission(any[Instance], any[KillReason])(any)
       }
 
       //ready
       ref ! ReadinessCheckResult(ReadinessCheck.DefaultName, newTaskId, ready = true, None)
       eventually {
-        f.killService.numKilled should be(1)
+        verify(f.scheduler, times(1)).decommission(any[Instance], any[KillReason])(any)
       }
+      ref ! f.instanceKilled(instance)
 
       promise.future.futureValue
     }
@@ -691,15 +715,14 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
   class Fixture {
     val deploymentsManager: TestActorRef[Actor] = TestActorRef[Actor](Props.empty)
     val deploymentStatus = DeploymentStatus(DeploymentPlan.empty, DeploymentStep(Seq.empty))
-    val killService = new KillServiceMock(system)
     val queue: LaunchQueue = mock[LaunchQueue]
     val scheduler: scheduling.Scheduler = mock[scheduling.Scheduler]
     val readinessCheckExecutor: ReadinessCheckExecutor = mock[ReadinessCheckExecutor]
     val hostName = "host.some"
     val hostPorts = Seq(123)
 
-    scheduler.stop(any)(any) returns Future.successful(Done)
-    scheduler.decommission(any)(any) returns Future.successful(Done)
+    scheduler.stop(any[Instance], any)(any) returns Future.successful(Done)
+    scheduler.decommission(any[Instance], any)(any) returns Future.successful(Done)
 
     def runningInstance(app: AppDefinition): Instance = {
       TestInstanceBuilder.newBuilder(app.id, version = app.version)
@@ -721,12 +744,17 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
       InstanceChanged(instanceId, app.version, app.id, condition, instance)
     }
 
+    def instanceKilled(instance: Instance): InstanceChanged = {
+      val updatedInstance = instance.copy(state = instance.state.copy(condition = Condition.Killed))
+      InstanceChanged(instance.instanceId, instance.runSpecVersion, instance.runSpecId, Condition.Killed, instance)
+    }
+
     def healthChanged(app: AppDefinition, healthy: Boolean): InstanceHealthChanged = {
       InstanceHealthChanged(Instance.Id.forRunSpec(app.id), app.version, app.id, healthy = Some(healthy))
     }
+
     def replaceActor(app: AppDefinition, promise: Promise[Unit]): ActorRef = system.actorOf(
-      TaskReplaceActor.props(deploymentsManager, deploymentStatus, killService, queue,
-        scheduler, system.eventStream, readinessCheckExecutor, app, promise)
+      TaskReplaceActor.props(deploymentsManager, deploymentStatus, queue, scheduler, system.eventStream, readinessCheckExecutor, app, promise)
     )
   }
 }

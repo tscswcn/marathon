@@ -14,7 +14,7 @@ import mesosphere.marathon.core.instance.Instance
 import mesosphere.marathon.core.launchqueue.LaunchQueue
 import mesosphere.marathon.core.pod.PodDefinition
 import mesosphere.marathon.core.readiness.ReadinessCheckExecutor
-import mesosphere.marathon.core.task.termination.{KillReason, KillService}
+import mesosphere.marathon.core.task.termination.KillReason
 import mesosphere.marathon.state.{AppDefinition, RunSpec}
 import mesosphere.mesos.Constraints
 
@@ -25,7 +25,6 @@ import scala.util.{Failure, Success}
 
 private class DeploymentActor(
     deploymentManagerActor: ActorRef,
-    killService: KillService,
     schedulerActions: SchedulerActions,
     scheduler: scheduling.Scheduler,
     plan: DeploymentPlan,
@@ -144,11 +143,11 @@ private class DeploymentActor(
   private def killInstancesIfNeeded(instancesToKill: Seq[Instance]): Future[Done] = async {
     logger.debug("Kill instances {}", instancesToKill)
     val changeGoalsFuture = instancesToKill.map(i => {
-      if (i.hasReservation) scheduler.stop(i.instanceId)
-      else scheduler.decommission(i.instanceId)
+      if (i.hasReservation) scheduler.stop(i, KillReason.DeploymentScaling)
+      else scheduler.decommission(i, KillReason.DeploymentScaling)
     })
     await(Future.sequence(changeGoalsFuture))
-    await(killService.killInstances(instancesToKill, KillReason.DeploymentScaling))
+    Done
   }
 
   def scaleRunnable(runnableSpec: RunSpec, scaleTo: Int,
@@ -192,8 +191,7 @@ private class DeploymentActor(
     val instances = await(scheduler.getInstances(runSpec.id))
 
     logger.info(s"Killing all instances of ${runSpec.id}: ${instances.map(_.instanceId)}")
-    await(Future.sequence(instances.map(i => scheduler.decommission(i.instanceId))))
-    await(killService.killInstances(instances, KillReason.DeletingApp))
+    await(Future.sequence(instances.map(i => scheduler.decommission(i, KillReason.DeletingApp))))
 
     launchQueue.resetDelay(runSpec)
 
@@ -213,8 +211,8 @@ private class DeploymentActor(
       Future.successful(Done)
     } else {
       val promise = Promise[Unit]()
-      context.actorOf(childSupervisor(TaskReplaceActor.props(deploymentManagerActor, status, killService,
-        launchQueue, scheduler, eventBus, readinessCheckExecutor, run, promise), s"TaskReplace-${plan.id}"))
+      context.actorOf(childSupervisor(TaskReplaceActor.props(deploymentManagerActor, status, launchQueue, scheduler, eventBus,
+        readinessCheckExecutor, run, promise), s"TaskReplace-${plan.id}"))
       promise.future.map(_ => Done)
     }
   }
@@ -229,7 +227,6 @@ object DeploymentActor {
 
   def props(
     deploymentManagerActor: ActorRef,
-    killService: KillService,
     schedulerActions: SchedulerActions,
     scheduler: scheduling.Scheduler,
     plan: DeploymentPlan,
@@ -240,7 +237,6 @@ object DeploymentActor {
 
     Props(new DeploymentActor(
       deploymentManagerActor,
-      killService,
       schedulerActions,
       scheduler,
       plan,

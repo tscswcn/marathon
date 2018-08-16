@@ -12,7 +12,7 @@ import mesosphere.marathon.core.instance.Instance.Id
 import mesosphere.marathon.core.launchqueue.LaunchQueue
 import mesosphere.marathon.core.readiness.ReadinessCheckExecutor
 import mesosphere.marathon.core.task.termination.InstanceChangedPredicates.considerTerminal
-import mesosphere.marathon.core.task.termination.{KillReason, KillService}
+import mesosphere.marathon.core.task.termination.KillReason
 import mesosphere.marathon.state.RunSpec
 
 import scala.async.Async.{async, await}
@@ -24,7 +24,6 @@ import scala.concurrent.duration._
 class TaskReplaceActor(
     val deploymentManagerActor: ActorRef,
     val status: DeploymentStatus,
-    val killService: KillService,
     val launchQueue: LaunchQueue,
     val scheduler: scheduling.Scheduler,
     val eventBus: EventStream,
@@ -199,11 +198,10 @@ class TaskReplaceActor(
             }
 
             if (runSpec.isResident) {
-              await(scheduler.stop(nextOldInstance.instanceId))
+              await(scheduler.stop(nextOldInstance, KillReason.Upgrading))
             } else {
-              await(scheduler.decommission(nextOldInstance.instanceId))
+              await(scheduler.decommission(nextOldInstance, KillReason.Upgrading))
             }
-            await(killService.killInstance(nextOldInstance, KillReason.Upgrading))
         }
       }
     }
@@ -230,15 +228,13 @@ object TaskReplaceActor extends StrictLogging {
   def props(
     deploymentManagerActor: ActorRef,
     status: DeploymentStatus,
-    killService: KillService,
     launchQueue: LaunchQueue,
     scheduler: scheduling.Scheduler,
     eventBus: EventStream,
     readinessCheckExecutor: ReadinessCheckExecutor,
     app: RunSpec,
     promise: Promise[Unit]): Props = Props(
-    new TaskReplaceActor(deploymentManagerActor, status, killService, launchQueue, scheduler, eventBus,
-      readinessCheckExecutor, app, promise)
+    new TaskReplaceActor(deploymentManagerActor, status, launchQueue, scheduler, eventBus, readinessCheckExecutor, app, promise)
   )
 
   /** Encapsulates the logic how to get a Restart going */

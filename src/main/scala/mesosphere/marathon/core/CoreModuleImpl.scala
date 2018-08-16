@@ -225,7 +225,8 @@ class CoreModuleImpl @Inject() (
   lazy val schedulingModule = new SchedulingModule(
     launcherModule.offerProcessor,
     instanceTrackerModule.instanceTracker,
-    taskStatusUpdateProcessor
+    taskStatusUpdateProcessor,
+    taskTerminationModule.taskKillService
   )
 
   // PLUGINS
@@ -291,7 +292,6 @@ class CoreModuleImpl @Inject() (
     marathonConf,
     leadershipModule,
     schedulingModule,
-    taskTerminationModule.taskKillService,
     appOfferMatcherModule.launchQueue,
     schedulerActions, // alternatively schedulerActionsProvider.get()
     healthModule.healthCheckManager,
