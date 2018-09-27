@@ -413,7 +413,7 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
       val promise = Promise[Unit]()
       val newApp = app.copy(versionInfo = VersionInfo.forNewConfig(Timestamp(1)))
       f.scheduler.sync(eq(newApp)) returns Future.successful(Done)
-      f.scheduler.schedule(eq(newApp), any) returns Future.successful(Seq(Instance.scheduled(newApp)))
+      f.scheduler.schedule(eq(newApp), any)(any) returns Future.successful(Seq(Instance.scheduled(newApp)))
       val ref = f.replaceActor(newApp, promise)
       watch(ref)
 
@@ -721,6 +721,7 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
 
     scheduler.stop(any[Instance], any)(any) returns Future.successful(Done)
     scheduler.decommission(any[Instance], any)(any) returns Future.successful(Done)
+    scheduler.schedule(any, any)(any) returns Future.successful(Seq.empty)
 
     def runningInstance(app: AppDefinition): Instance = {
       TestInstanceBuilder.newBuilder(app.id, version = app.version)

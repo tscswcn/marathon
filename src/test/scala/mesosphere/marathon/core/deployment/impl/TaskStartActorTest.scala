@@ -206,7 +206,7 @@ class TaskStartActorTest extends AkkaUnitTest with Eventually {
     def startActor(app: AppDefinition, scaleTo: Int, promise: Promise[Unit]): TestActorRef[TaskStartActor] =
       TestActorRef(childSupervisor(
         TaskStartActor.props(
-        deploymentManager.ref, status, scheduler, system.eventStream, readinessCheckExecutor, app, scaleTo, promise),
+          deploymentManager.ref, status, scheduler, system.eventStream, readinessCheckExecutor, app, scaleTo, promise),
         "Test-TaskStartActor")
       )
 
