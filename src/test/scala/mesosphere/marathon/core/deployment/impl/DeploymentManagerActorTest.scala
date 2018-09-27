@@ -15,10 +15,8 @@ import mesosphere.marathon.core.deployment.DeploymentPlan
 import mesosphere.marathon.core.deployment.impl.DeploymentActor.Cancel
 import mesosphere.marathon.core.deployment.impl.DeploymentManagerActor._
 import mesosphere.marathon.core.health.HealthCheckManager
-import mesosphere.marathon.core.launchqueue.LaunchQueue
 import mesosphere.marathon.core.readiness.ReadinessCheckExecutor
 import mesosphere.marathon.core.storage.store.impl.memory.InMemoryPersistenceStore
-import mesosphere.marathon.core.task.termination.KillService
 import mesosphere.marathon.metrics.Metrics
 import mesosphere.marathon.metrics.dummy.DummyMetrics
 import mesosphere.marathon.state.AppDefinition
@@ -185,7 +183,6 @@ class DeploymentManagerActorTest extends AkkaUnitTest with ImplicitSender with G
     val driver: SchedulerDriver = mock[SchedulerDriver]
     val deploymentRepo = mock[DeploymentRepository]
     val eventBus: EventStream = mock[EventStream]
-    val launchQueue: LaunchQueue = mock[LaunchQueue]
     val config: MarathonConf = new ScallopConf(Seq("--master", "foo")) with MarathonConf {
       verify()
     }
@@ -200,12 +197,11 @@ class DeploymentManagerActorTest extends AkkaUnitTest with ImplicitSender with G
 
     // A method that returns dummy props. Used to control the deployments progress. Otherwise the tests become racy
     // and depending on when DeploymentActor sends DeploymentFinished message.
-    val deploymentActorProps: (Any, Any, Any, Any, Any, Any, Any, Any) => Props = (_, _, _, _, _, _, _, _) => TestActor.props(new LinkedBlockingDeque())
+    val deploymentActorProps: (Any, Any, Any, Any, Any, Any, Any) => Props = (_, _, _, _, _, _, _) => TestActor.props(new LinkedBlockingDeque())
 
     def deploymentManager(): TestActorRef[DeploymentManagerActor] = TestActorRef (
       DeploymentManagerActor.props(
         metrics,
-        launchQueue,
         schedulerActions,
         scheduler,
         hcManager,
@@ -217,6 +213,5 @@ class DeploymentManagerActorTest extends AkkaUnitTest with ImplicitSender with G
     deploymentRepo.store(any[DeploymentPlan]) returns Future.successful(Done)
     deploymentRepo.delete(any[String]) returns Future.successful(Done)
     deploymentRepo.all() returns Source.empty
-    launchQueue.add(any, any) returns Future.successful(Done)
   }
 }

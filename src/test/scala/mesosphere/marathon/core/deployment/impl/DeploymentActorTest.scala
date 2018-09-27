@@ -12,7 +12,6 @@ import mesosphere.marathon.core.deployment.impl.DeploymentManagerActor.Deploymen
 import mesosphere.marathon.core.event.InstanceChanged
 import mesosphere.marathon.core.health.HealthCheckManager
 import mesosphere.marathon.core.instance.{Instance, TestInstanceBuilder}
-import mesosphere.marathon.core.launchqueue.LaunchQueue
 import mesosphere.marathon.core.readiness.ReadinessCheckExecutor
 import mesosphere.marathon.core.task.termination.KillReason
 import mesosphere.marathon.state._
@@ -41,7 +40,6 @@ class DeploymentActorTest extends AkkaUnitTest with GroupCreation with Eventuall
     scheduler.decommission(any[Seq[Instance]], any)(any) returns Future.successful(Done)
     scheduler.decommission(any[Instance], any)(any) returns Future.successful(Done)
 
-    val queue: LaunchQueue = mock[LaunchQueue]
     val schedulerActions: SchedulerActions = mock[SchedulerActions]
     val hcManager: HealthCheckManager = mock[HealthCheckManager]
     val config: DeploymentConfig = mock[DeploymentConfig]
@@ -67,7 +65,6 @@ class DeploymentActorTest extends AkkaUnitTest with GroupCreation with Eventuall
         schedulerActions,
         scheduler,
         plan,
-        queue,
         hcManager,
         system.eventStream,
         readinessCheckExecutor
@@ -126,7 +123,7 @@ class DeploymentActorTest extends AkkaUnitTest with GroupCreation with Eventuall
 
       val plan = DeploymentPlan(origGroup, targetGroup)
 
-      queue.purge(any) returns Future.successful(Done)
+      //queue.purge(any) returns Future.successful(Done)
       schedulerActions.startRunSpec(any) returns Future.successful(Done)
       scheduler.getInstances(Matchers.eq(app1.id))(any[ExecutionContext]) returns Future.successful(Seq(instance1_1, instance1_2))
       scheduler.getInstances(Matchers.eq(app2.id))(any) returns Future.successful(Seq(instance2_1))
@@ -138,8 +135,8 @@ class DeploymentActorTest extends AkkaUnitTest with GroupCreation with Eventuall
       scheduler.getInstance(Matchers.eq(instance3_1.instanceId))(any) returns Future.successful(Some(instance3_1))
       scheduler.getInstance(Matchers.eq(instance4_1.instanceId))(any) returns Future.successful(Some(instance4_1))
 
-      queue.sync(app2New) returns Future.successful(Done)
-      when(queue.add(same(app2New), any[Int])).thenAnswer(new Answer[Future[Done]] {
+      scheduler.sync(app2New) returns Future.successful(Done)
+      when(scheduler.schedule(same(app2New), any[Int])).thenAnswer(new Answer[Future[Done]] {
         def answer(invocation: InvocationOnMock): Future[Done] = {
           for (i <- 0 until invocation.getArguments()(1).asInstanceOf[Int])
             system.eventStream.publish(instanceChanged(app2New, Condition.Running))
@@ -169,7 +166,7 @@ class DeploymentActorTest extends AkkaUnitTest with GroupCreation with Eventuall
 
       managerProbe.expectMsg(5.seconds, DeploymentFinished(plan, Success(Done)))
 
-      verify(queue).resetDelay(app4.copy(instances = 0))
+      verify(scheduler).resetDelay(app4.copy(instances = 0))
     }
 
     "Restart app" in new Fixture {
@@ -191,8 +188,8 @@ class DeploymentActorTest extends AkkaUnitTest with GroupCreation with Eventuall
 
       val plan = DeploymentPlan("foo", origGroup, targetGroup, List(DeploymentStep(List(RestartApplication(appNew)))), Timestamp.now())
 
-      queue.sync(appNew) returns Future.successful(Done)
-      when(queue.add(same(appNew), any[Int])).thenAnswer(new Answer[Future[Done]] {
+      scheduler.sync(appNew) returns Future.successful(Done)
+      when(scheduler.schedule(same(appNew), any[Int])).thenAnswer(new Answer[Future[Done]] {
         def answer(invocation: InvocationOnMock): Future[Done] = {
           for (i <- 0 until invocation.getArguments()(1).asInstanceOf[Int])
             system.eventStream.publish(instanceChanged(appNew, Condition.Running))
@@ -217,7 +214,7 @@ class DeploymentActorTest extends AkkaUnitTest with GroupCreation with Eventuall
 
       managerProbe.expectMsg(5.seconds, DeploymentFinished(plan, Success(Done)))
 
-      verify(queue).add(appNew, 2)
+      verify(scheduler).schedule(appNew, 2)
     }
 
     "Restart suspended app" in new Fixture {
@@ -231,8 +228,6 @@ class DeploymentActorTest extends AkkaUnitTest with GroupCreation with Eventuall
       val targetGroup = createRootGroup(groups = Set(createGroup(PathId("/foo"), Map(appNew.id -> appNew))))
 
       val plan = DeploymentPlan("foo", origGroup, targetGroup, List(DeploymentStep(List(RestartApplication(appNew)))), Timestamp.now())
-
-      queue.add(app, 2) returns Future.successful(Done)
 
       deploymentActor(managerProbe.ref, plan)
       plan.steps.zipWithIndex.foreach {

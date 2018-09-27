@@ -8,7 +8,6 @@ import mesosphere.marathon.core.condition.Condition
 import mesosphere.marathon.core.event.{DeploymentStatus, InstanceChanged, InstanceHealthChanged}
 import mesosphere.marathon.core.health.{MarathonHttpHealthCheck, PortReference}
 import mesosphere.marathon.core.instance.Instance
-import mesosphere.marathon.core.launchqueue.LaunchQueue
 import mesosphere.marathon.core.readiness.ReadinessCheckExecutor
 import mesosphere.marathon.state.{AppDefinition, PathId}
 import org.scalatest.concurrent.PatienceConfiguration.Timeout
@@ -85,7 +84,6 @@ class AppStartActorTest extends AkkaUnitTest {
     class Fixture {
 
       val schedulerActions: SchedulerActions = mock[SchedulerActions]
-      val launchQueue: LaunchQueue = mock[LaunchQueue]
       val deploymentManager: TestProbe = TestProbe()
       val deploymentStatus: DeploymentStatus = mock[DeploymentStatus]
       val readinessCheckExecutor: ReadinessCheckExecutor = mock[ReadinessCheckExecutor]
@@ -107,8 +105,8 @@ class AppStartActorTest extends AkkaUnitTest {
       }
 
       def startActor(app: AppDefinition, scaleTo: Int, promise: Promise[Unit]): TestActorRef[AppStartActor] =
-        TestActorRef(AppStartActor.props(deploymentManager.ref, deploymentStatus, schedulerActions,
-          launchQueue, scheduler, system.eventStream, readinessCheckExecutor, app, scaleTo, Seq.empty, promise)
+        TestActorRef(AppStartActor.props(deploymentManager.ref, deploymentStatus, schedulerActions, scheduler,
+          system.eventStream, readinessCheckExecutor, app, scaleTo, Seq.empty, promise)
         )
     }
   }
