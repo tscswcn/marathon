@@ -7,7 +7,6 @@ import akka.event.EventStream
 import com.typesafe.scalalogging.StrictLogging
 import mesosphere.marathon.core.event.DeploymentStatus
 import mesosphere.marathon.core.instance.Instance
-import mesosphere.marathon.core.launchqueue.LaunchQueue
 import mesosphere.marathon.core.readiness.ReadinessCheckExecutor
 import mesosphere.marathon.state.RunSpec
 
@@ -17,7 +16,6 @@ class AppStartActor(
     val deploymentManagerActor: ActorRef,
     val status: DeploymentStatus,
     val schedulerActions: SchedulerActions,
-    val launchQueue: LaunchQueue,
     val scheduler: scheduling.Scheduler,
     val eventBus: EventStream,
     val readinessCheckExecutor: ReadinessCheckExecutor,
@@ -54,7 +52,6 @@ object AppStartActor {
     deploymentManagerActor: ActorRef,
     status: DeploymentStatus,
     schedulerActions: SchedulerActions,
-    launchQueue: LaunchQueue,
     scheduler: scheduling.Scheduler,
     eventBus: EventStream,
     readinessCheckExecutor: ReadinessCheckExecutor,
@@ -62,7 +59,7 @@ object AppStartActor {
     scaleTo: Int,
     currentInstances: Seq[Instance],
     promise: Promise[Unit]): Props = {
-    Props(new AppStartActor(deploymentManagerActor, status, schedulerActions, launchQueue, scheduler, eventBus,
-      readinessCheckExecutor, runSpec, scaleTo, currentInstances, promise))
+    Props(new AppStartActor(deploymentManagerActor, status, schedulerActions, scheduler, eventBus, readinessCheckExecutor,
+      runSpec, scaleTo, currentInstances, promise))
   }
 }

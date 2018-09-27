@@ -6,7 +6,6 @@ import akka.event.EventStream
 import akka.stream.Materializer
 import mesosphere.marathon.core.deployment.impl.{DeploymentActor, DeploymentManagerActor, DeploymentManagerDelegate}
 import mesosphere.marathon.core.health.HealthCheckManager
-import mesosphere.marathon.core.launchqueue.LaunchQueue
 import mesosphere.marathon.core.leadership.LeadershipModule
 import mesosphere.marathon.core.readiness.ReadinessCheckExecutor
 import mesosphere.marathon.metrics.Metrics
@@ -22,18 +21,16 @@ class DeploymentModule(
     config: DeploymentConfig,
     leadershipModule: LeadershipModule,
     schedulingModule: SchedulingModule,
-    launchQueue: LaunchQueue,
     schedulerActions: SchedulerActions,
     healthCheckManager: HealthCheckManager,
     eventBus: EventStream,
     readinessCheckExecutor: ReadinessCheckExecutor,
     deploymentRepository: DeploymentRepository,
-    deploymentActorProps: (ActorRef, SchedulerActions, scheduling.Scheduler, DeploymentPlan, LaunchQueue, HealthCheckManager, EventStream, ReadinessCheckExecutor) => Props = DeploymentActor.props)(implicit val mat: Materializer) {
+    deploymentActorProps: (ActorRef, SchedulerActions, scheduling.Scheduler, DeploymentPlan, HealthCheckManager, EventStream, ReadinessCheckExecutor) => Props = DeploymentActor.props)(implicit val mat: Materializer) {
 
   private[this] val deploymentManagerActorRef: ActorRef = {
     val props = DeploymentManagerActor.props(
       metrics,
-      launchQueue,
       schedulerActions,
       schedulingModule.scheduler,
       healthCheckManager,

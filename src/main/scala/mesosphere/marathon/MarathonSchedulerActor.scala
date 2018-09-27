@@ -471,7 +471,8 @@ class SchedulerActions(
 
       if (toAdd > 0) {
         logger.info(s"Queueing $toAdd new instances for ${runSpec.id} to the already $leftToLaunch queued ones")
-        await(launchQueue.add(runSpec, toAdd))
+        // TODO(karsten): Use scheduler interface instead
+        //await(launchQueue.add(runSpec, toAdd))
       } else {
         logger.info(s"Already queued or started ${runningInstances.size} instances for ${runSpec.id}. Not scaling.")
       }

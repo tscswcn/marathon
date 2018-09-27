@@ -226,7 +226,8 @@ class CoreModuleImpl @Inject() (
     launcherModule.offerProcessor,
     instanceTrackerModule.instanceTracker,
     taskStatusUpdateProcessor,
-    taskTerminationModule.taskKillService
+    taskTerminationModule.taskKillService,
+    appOfferMatcherModule.launchQueue
   )
 
   // PLUGINS
@@ -292,7 +293,6 @@ class CoreModuleImpl @Inject() (
     marathonConf,
     leadershipModule,
     schedulingModule,
-    appOfferMatcherModule.launchQueue,
     schedulerActions, // alternatively schedulerActionsProvider.get()
     healthModule.healthCheckManager,
     eventStream,

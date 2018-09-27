@@ -22,7 +22,6 @@ trait StartingBehavior extends ReadinessBehavior with StrictLogging { this: Acto
   def eventBus: EventStream
   def scaleTo: Int
   def nrToStart: Future[Int]
-  def launchQueue: LaunchQueue
   def scheduler: scheduling.Scheduler
 
   def initializeStart(): Future[Done]

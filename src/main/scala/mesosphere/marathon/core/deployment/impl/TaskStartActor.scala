@@ -7,7 +7,6 @@ import akka.actor.{Actor, ActorRef, Props}
 import akka.event.EventStream
 import com.typesafe.scalalogging.StrictLogging
 import mesosphere.marathon.core.event.DeploymentStatus
-import mesosphere.marathon.core.launchqueue.LaunchQueue
 import mesosphere.marathon.core.readiness.ReadinessCheckExecutor
 import mesosphere.marathon.state.RunSpec
 
@@ -19,7 +18,6 @@ class TaskStartActor(
     val deploymentManagerActor: ActorRef,
     val status: DeploymentStatus,
     val scheduler: scheduling.Scheduler,
-    val launchQueue: LaunchQueue,
     val eventBus: EventStream,
     val readinessCheckExecutor: ReadinessCheckExecutor,
     val runSpec: RunSpec,
@@ -62,14 +60,12 @@ object TaskStartActor {
     deploymentManager: ActorRef,
     status: DeploymentStatus,
     scheduler: scheduling.Scheduler,
-    launchQueue: LaunchQueue,
     eventBus: EventStream,
     readinessCheckExecutor: ReadinessCheckExecutor,
     runSpec: RunSpec,
     scaleTo: Int,
     promise: Promise[Unit]): Props = {
-    Props(new TaskStartActor(deploymentManager, status, scheduler, launchQueue,
-      eventBus, readinessCheckExecutor, runSpec, scaleTo, promise)
+    Props(new TaskStartActor(deploymentManager, status, scheduler, eventBus, readinessCheckExecutor, runSpec, scaleTo, promise)
     )
   }
 }

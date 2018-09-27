@@ -9,7 +9,6 @@ import com.typesafe.scalalogging.StrictLogging
 import mesosphere.marathon.core.event._
 import mesosphere.marathon.core.instance.{Goal, Instance}
 import mesosphere.marathon.core.instance.Instance.Id
-import mesosphere.marathon.core.launchqueue.LaunchQueue
 import mesosphere.marathon.core.readiness.ReadinessCheckExecutor
 import mesosphere.marathon.core.task.termination.InstanceChangedPredicates.considerTerminal
 import mesosphere.marathon.core.task.termination.KillReason
@@ -24,7 +23,6 @@ import scala.concurrent.duration._
 class TaskReplaceActor(
     val deploymentManagerActor: ActorRef,
     val status: DeploymentStatus,
-    val launchQueue: LaunchQueue,
     val scheduler: scheduling.Scheduler,
     val eventBus: EventStream,
     val readinessCheckExecutor: ReadinessCheckExecutor,
@@ -82,7 +80,7 @@ class TaskReplaceActor(
       // kill the 2 running instances and only tell the [[TaskLauncherActor]] to start the 3 scheduled v1 instances with
       // the v2 run spec. We then schedule 2 more v2 instances. In the future we probably want to bind instances to a
       // certain run spec. Until then we have to update the run spec in a [[TaskLauncherActor]]
-      await(launchQueue.sync(runSpec))
+      await(scheduler.sync(runSpec))
 
       // kill old instances to free some capacity
       for (_ <- 0 until ignitionStrategy.nrToKillImmediately) killNextOldInstance()
@@ -92,7 +90,7 @@ class TaskReplaceActor(
 
       // reset the launch queue delay
       logger.info("Resetting the backoff delay before restarting the runSpec")
-      launchQueue.resetDelay(runSpec)
+      scheduler.resetDelay(runSpec)
 
       // it might be possible, that we come here, but nothing is left to do
       checkFinished()
@@ -229,13 +227,12 @@ object TaskReplaceActor extends StrictLogging {
   def props(
     deploymentManagerActor: ActorRef,
     status: DeploymentStatus,
-    launchQueue: LaunchQueue,
     scheduler: scheduling.Scheduler,
     eventBus: EventStream,
     readinessCheckExecutor: ReadinessCheckExecutor,
     app: RunSpec,
     promise: Promise[Unit]): Props = Props(
-    new TaskReplaceActor(deploymentManagerActor, status, launchQueue, scheduler, eventBus, readinessCheckExecutor, app, promise)
+    new TaskReplaceActor(deploymentManagerActor, status, scheduler, eventBus, readinessCheckExecutor, app, promise)
   )
 
   /** Encapsulates the logic how to get a Restart going */

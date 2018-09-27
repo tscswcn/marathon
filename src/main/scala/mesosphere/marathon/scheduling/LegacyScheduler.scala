@@ -5,6 +5,7 @@ import akka.Done
 import mesosphere.marathon.core.instance.update.InstanceUpdateOperation.RescheduleReserved
 import mesosphere.marathon.core.instance.{Goal, Instance}
 import mesosphere.marathon.core.launcher.OfferProcessor
+import mesosphere.marathon.core.launchqueue.LaunchQueue
 import mesosphere.marathon.core.task.termination.{KillReason, KillService}
 import mesosphere.marathon.core.task.tracker.InstanceTracker
 import mesosphere.marathon.core.task.update.TaskStatusUpdateProcessor
@@ -18,8 +19,12 @@ case class LegacyScheduler(
     offerProcessor: OfferProcessor,
     instanceTracker: InstanceTracker,
     statusUpdateProcessor: TaskStatusUpdateProcessor,
-    killService: KillService) extends Scheduler {
+    killService: KillService,
+    launchQueue: LaunchQueue) extends Scheduler {
 
+  // TODO(karsten): Synchronize schedule and reschedule
+  // we cannot process more Add requests for one runSpec in parallel because it leads to race condition.
+  // See MARATHON-8320 for details. The queue handling is helping us ensure we add an instance at a time.
   override def schedule(runSpec: RunSpec, count: Int)(implicit ec: ExecutionContext): Future[Seq[Instance]] = async {
     val instancesToSchedule = 0.until(count).map { _ => Instance.scheduled(runSpec, Instance.Id.forRunSpec(runSpec.id)) }
     await(instanceTracker.schedule(instancesToSchedule))
@@ -31,6 +36,10 @@ case class LegacyScheduler(
     await(instanceTracker.process(RescheduleReserved(instance, runSpec.version)))
     Done
   }
+
+  override def resetDelay(spec: RunSpec): Unit = launchQueue.resetDelay(spec)
+
+  override def sync(spec: RunSpec): Future[Done] = launchQueue.sync(spec)
 
   override def getInstances(runSpecId: PathId)(implicit ec: ExecutionContext): Future[Seq[Instance]] = instanceTracker.specInstances(runSpecId)
 
