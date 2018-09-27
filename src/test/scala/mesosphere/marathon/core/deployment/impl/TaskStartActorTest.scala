@@ -168,7 +168,7 @@ class TaskStartActorTest extends AkkaUnitTest with Eventually {
       val f = new Fixture
       val promise = Promise[Unit]()
       val app = AppDefinition("/myApp".toPath, instances = 5)
-      f.taskTracker.specInstances(eq(app.id))(any).returns(Future.successful(Seq.empty))
+      f.scheduler.getInstances(eq(app.id))(any).returns(Future.successful(Seq.empty))
       val ref = f.startActor(app, app.instances, promise)
       watch(ref)
       // 4 initial instances should be added to the launch queue
