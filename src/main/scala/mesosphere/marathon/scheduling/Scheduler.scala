@@ -5,14 +5,30 @@ import akka.Done
 import mesosphere.marathon.core.instance.Instance
 import mesosphere.marathon.core.launcher.OfferProcessor
 import mesosphere.marathon.core.task.termination.KillReason
-import mesosphere.marathon.state.PathId
+import mesosphere.marathon.state.{PathId, RunSpec}
 import org.apache.mesos.Protos
 
 import scala.concurrent.{ExecutionContext, Future}
 
 trait Scheduler extends OfferProcessor {
 
-  //def create(runSpec: RunSpec): Future[Instance.Id]
+  /**
+    * Creates a new instance based on the provided run spec and schedules it.
+    *
+    * @param runSpec The run spec for the new instances
+    * @param count Number of new instance to schedule
+    * @return The scheduled instance.
+    */
+  def schedule(runSpec: RunSpec, count: Int = 1)(implicit ec: ExecutionContext): Future[Seq[Instance]]
+
+  /**
+    * Reschedules a persistent instance with a new run spec.
+    *
+    * @param instance
+    * @param runSpec
+    * @return
+    */
+  def reschedule(instance: Instance, runSpec: RunSpec)(implicit ec: ExecutionContext): Future[Done]
 
   /**
     * Retrieve all instances for a specific run spec.

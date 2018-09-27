@@ -37,8 +37,10 @@ class TaskStartActor(
   override def initializeStart(): Future[Done] = async {
     val toStart = await(nrToStart)
     logger.info(s"TaskStartActor: initializing for ${runSpec.id} and toStart: $toStart")
-    if (toStart > 0) await(launchQueue.add(runSpec, toStart))
-    else Done
+    if (toStart > 0) {
+      await(scheduler.schedule(runSpec, toStart))
+      Done
+    } else Done
   }.pipeTo(self)
 
   override def postStop(): Unit = {

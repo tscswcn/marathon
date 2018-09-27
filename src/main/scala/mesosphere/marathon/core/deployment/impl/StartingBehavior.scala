@@ -45,8 +45,7 @@ trait StartingBehavior extends ReadinessBehavior with StrictLogging { this: Acto
     case InstanceChanged(id, `version`, `pathId`, condition: Condition, instance) if condition.isTerminal || instance.isReservedTerminal =>
       logger.warn(s"New instance [$id] failed during app ${runSpec.id.toString} scaling, queueing another instance")
       instanceTerminated(id)
-      // TODO(karsten): scheduler.create(runSpec)
-      launchQueue.add(runSpec, 1).pipeTo(self)
+      scheduler.schedule(runSpec).pipeTo(self)
 
     case Sync => async {
       val instances = await(scheduler.getInstances(runSpec.id))
@@ -55,8 +54,8 @@ trait StartingBehavior extends ReadinessBehavior with StrictLogging { this: Acto
       logger.debug(s"Sync start instancesToStartNow=$instancesToStartNow appId=${runSpec.id}")
       if (instancesToStartNow > 0) {
         logger.info(s"Reconciling app ${runSpec.id} scaling: queuing $instancesToStartNow new instances")
-        // TODO(karsten): scheduler.create(runSpec)
-        await(launchQueue.add(runSpec, instancesToStartNow))
+        // TODO(karsten): Distinguish between rescheduling of persistent instances and ephemeral instances.
+        await(scheduler.schedule(runSpec, instancesToStartNow))
       }
       context.system.scheduler.scheduleOnce(StartingBehavior.syncInterval, self, Sync)
       Done // Otherwise we will pipe the result of scheduleOnce(...) call which is a Cancellable

@@ -2,12 +2,13 @@ package mesosphere.marathon
 package scheduling
 
 import akka.Done
+import mesosphere.marathon.core.instance.update.InstanceUpdateOperation.RescheduleReserved
 import mesosphere.marathon.core.instance.{Goal, Instance}
 import mesosphere.marathon.core.launcher.OfferProcessor
 import mesosphere.marathon.core.task.termination.{KillReason, KillService}
 import mesosphere.marathon.core.task.tracker.InstanceTracker
 import mesosphere.marathon.core.task.update.TaskStatusUpdateProcessor
-import mesosphere.marathon.state.PathId
+import mesosphere.marathon.state.{PathId, RunSpec}
 import org.apache.mesos.Protos
 
 import scala.async.Async.{async, await}
@@ -19,7 +20,17 @@ case class LegacyScheduler(
     statusUpdateProcessor: TaskStatusUpdateProcessor,
     killService: KillService) extends Scheduler {
 
-  //override def create(runSpec: RunSpec): Future[Instance.Id]
+  override def schedule(runSpec: RunSpec, count: Int)(implicit ec: ExecutionContext): Future[Seq[Instance]] = async {
+    val instancesToSchedule = 0.until(count).map { _ => Instance.scheduled(runSpec, Instance.Id.forRunSpec(runSpec.id)) }
+    await(instanceTracker.schedule(instancesToSchedule))
+    instancesToSchedule
+  }
+
+  override def reschedule(instance: Instance, runSpec: RunSpec)(implicit ec: ExecutionContext): Future[Done] = async {
+    assert(instance.isReserved && instance.state.goal == Goal.Stopped)
+    await(instanceTracker.process(RescheduleReserved(instance, runSpec.version)))
+    Done
+  }
 
   override def getInstances(runSpecId: PathId)(implicit ec: ExecutionContext): Future[Seq[Instance]] = instanceTracker.specInstances(runSpecId)
 
