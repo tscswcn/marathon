@@ -136,6 +136,7 @@ class DeploymentActorTest extends AkkaUnitTest with GroupCreation with Eventuall
       scheduler.getInstance(Matchers.eq(instance4_1.instanceId))(any) returns Future.successful(Some(instance4_1))
 
       scheduler.sync(Matchers.eq(app2New))(any) returns Future.successful(Done)
+      scheduler.reschedule(any[Seq[Instance]], same(app2New))(any) returns Future.successful(Done)
       when(scheduler.schedule(same(app2New), any[Int])(any)).thenAnswer(new Answer[Future[Done]] {
         def answer(invocation: InvocationOnMock): Future[Done] = {
           for (i <- 0 until invocation.getArguments()(1).asInstanceOf[Int])
@@ -189,6 +190,7 @@ class DeploymentActorTest extends AkkaUnitTest with GroupCreation with Eventuall
       val plan = DeploymentPlan("foo", origGroup, targetGroup, List(DeploymentStep(List(RestartApplication(appNew)))), Timestamp.now())
 
       scheduler.sync(Matchers.eq(appNew))(any) returns Future.successful(Done)
+      scheduler.reschedule(any[Seq[Instance]], same(appNew))(any) returns Future.successful(Done)
       when(scheduler.schedule(same(appNew), any[Int])(any)).thenAnswer(new Answer[Future[Done]] {
         def answer(invocation: InvocationOnMock): Future[Done] = {
           for (i <- 0 until invocation.getArguments()(1).asInstanceOf[Int])

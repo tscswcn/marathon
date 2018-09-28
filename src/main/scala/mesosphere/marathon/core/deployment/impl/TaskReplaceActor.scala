@@ -170,12 +170,21 @@ class TaskReplaceActor(
     val leftCapacity = math.max(0, ignitionStrategy.maxCapacity - oldInstanceIds.size - instancesStarted)
     val instancesNotStartedYet = math.max(0, runSpec.instances - instancesStarted)
     val instancesToStartNow = math.min(instancesNotStartedYet, leftCapacity)
-    if (instancesToStartNow > 0) {
+    if (instancesToStartNow > 0) async {
       logger.info(s"Reconciling instances during app $pathId restart: queuing $instancesToStartNow new instances")
       instancesStarted += instancesToStartNow
-      // TODO(karsten): Distinguish between rescheduling persistent instances and scheduling new instances.
-      scheduler.schedule(runSpec, instancesToStartNow)
-    } else {
+
+      // Reschedule stopped resident instances first.
+      val existingReservedStoppedInstances = currentInstances
+        .filter(i => i.isReserved && i.state.goal == Goal.Stopped) // resident to relaunch
+        .take(instancesToStartNow)
+      await(scheduler.reschedule(existingReservedStoppedInstances, runSpec))
+
+      // Schedule remaining instances
+      val instancesToSchedule = math.max(0, instancesToStartNow - existingReservedStoppedInstances.length)
+      await(scheduler.schedule(runSpec, instancesToSchedule))
+    }
+    else {
       Future.successful(Done)
     }
   }

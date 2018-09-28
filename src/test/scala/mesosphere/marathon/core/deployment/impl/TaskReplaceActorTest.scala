@@ -698,6 +698,7 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
     scheduler.stop(any[Instance], any)(any) returns Future.successful(Done)
     scheduler.decommission(any[Instance], any)(any) returns Future.successful(Done)
     scheduler.schedule(any, any)(any) returns Future.successful(Done)
+    scheduler.reschedule(any[Seq[Instance]], any)(any) returns Future.successful(Done)
     scheduler.sync(any)(any) returns Future.successful(Done)
 
     def runningInstance(app: AppDefinition): Instance = {
