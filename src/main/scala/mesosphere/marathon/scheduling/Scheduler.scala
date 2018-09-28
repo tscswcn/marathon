@@ -31,7 +31,7 @@ trait Scheduler extends OfferProcessor {
   def reschedule(instance: Instance, runSpec: RunSpec)(implicit ec: ExecutionContext): Future[Done]
 
   def resetDelay(spec: RunSpec): Unit
-  def sync(spec: RunSpec): Future[Done]
+  def sync(spec: RunSpec)(implicit ec: ExecutionContext): Future[Done]
 
   /**
     * Retrieve all instances for a specific run spec.

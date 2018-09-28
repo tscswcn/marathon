@@ -41,8 +41,6 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
 
       val promise = Promise[Unit]()
       val newApp = app.copy(versionInfo = VersionInfo.forNewConfig(Timestamp(1)))
-      f.scheduler.sync(newApp) returns Future.successful(Done)
-      f.scheduler.schedule(newApp, 5) returns Future.successful(Done)
 
       val ref = f.replaceActor(newApp, promise)
       watch(ref)
@@ -75,8 +73,6 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
 
       val promise = Promise[Unit]()
       val newApp = app.copy(versionInfo = VersionInfo.forNewConfig(Timestamp(1)))
-      f.scheduler.sync(eq(newApp)) returns Future.successful(Done)
-      f.scheduler.schedule(newApp, 4) returns Future.successful(Done)
 
       val instanceC = f.runningInstance(newApp)
 
@@ -120,8 +116,6 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
 
       val promise = Promise[Unit]()
       val newApp = app.copy(versionInfo = VersionInfo.forNewConfig(Timestamp(1)))
-      f.scheduler.sync(newApp) returns Future.successful(Done)
-      f.scheduler.schedule(newApp, 5) returns Future.successful(Done)
 
       val ref = f.replaceActor(newApp, promise)
       watch(ref)
@@ -160,8 +154,6 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
 
       val promise = Promise[Unit]()
       val newApp = app.copy(versionInfo = VersionInfo.forNewConfig(Timestamp(1)))
-      f.scheduler.sync(newApp) returns Future.successful(Done)
-      f.scheduler.schedule(newApp, 1) returns Future.successful(Done)
 
       val ref = f.replaceActor(newApp, promise)
       watch(ref)
@@ -211,12 +203,10 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
 
       val promise = Promise[Unit]()
       val newApp = app.copy(versionInfo = VersionInfo.forNewConfig(Timestamp(1)))
-      f.scheduler.sync(newApp) returns Future.successful(Done)
-      f.scheduler.schedule(newApp, 3) returns Future.successful(Done)
       val ref = f.replaceActor(newApp, promise)
       watch(ref)
 
-      // all new tasks are schedulerd directly
+      // all new tasks are scheduled directly
       eventually { app: AppDefinition => verify(f.scheduler, times(3)).schedule(eq(app), eq(1))(any) }
 
       // ceiling(minimumHealthCapacity * 3) = 2 are left running
@@ -268,8 +258,6 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
 
       val promise = Promise[Unit]()
       val newApp = app.copy(versionInfo = VersionInfo.forNewConfig(Timestamp(1)))
-      f.scheduler.sync(newApp) returns Future.successful(Done)
-      f.scheduler.schedule(newApp, 1) returns Future.successful(Done)
       val ref = f.replaceActor(newApp, promise)
       watch(ref)
 
@@ -342,8 +330,6 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
 
       val promise = Promise[Unit]()
       val newApp = app.copy(versionInfo = VersionInfo.forNewConfig(Timestamp(1)))
-      f.scheduler.sync(newApp) returns Future.successful(Done)
-      f.scheduler.schedule(newApp, 1) returns Future.successful(Done)
       val ref = f.replaceActor(newApp, promise)
       watch(ref)
 
@@ -412,7 +398,6 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
 
       val promise = Promise[Unit]()
       val newApp = app.copy(versionInfo = VersionInfo.forNewConfig(Timestamp(1)))
-      f.scheduler.sync(eq(newApp)) returns Future.successful(Done)
       f.scheduler.schedule(eq(newApp), any)(any) returns Future.successful(Done)
       val ref = f.replaceActor(newApp, promise)
       watch(ref)
@@ -481,8 +466,6 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
       f.scheduler.getInstance(eq(instanceB.instanceId))(any) returns Future.successful(Some(instanceB))
       f.scheduler.getInstance(eq(instanceC.instanceId))(any) returns Future.successful(Some(instanceC))
       f.scheduler.getInstance(eq(instanceD.instanceId))(any) returns Future.successful(Some(instanceD))
-      f.scheduler.sync(newApp) returns Future.successful(Done)
-      f.scheduler.schedule(newApp, 1) returns Future.successful(Done)
 
       val ref = f.replaceActor(newApp, promise)
       watch(ref)
@@ -495,7 +478,7 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
 
       // the kill is confirmed (see answer above) and the first new task is queued
       eventually {
-        verify(f.scheduler, times(1)).sync(newApp)
+        verify(f.scheduler, times(1)).sync(eq(newApp))(any)
         verify(f.scheduler, times(1)).resetDelay(newApp)
       }
 
@@ -548,7 +531,6 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
       f.scheduler.getInstances(eq(app.id))(any) returns Future.successful(Seq(instanceA, instanceB))
       f.scheduler.getInstance(eq(instanceA.instanceId))(any) returns Future.successful(Some(instanceA))
       f.scheduler.getInstance(eq(instanceB.instanceId))(any) returns Future.successful(Some(instanceB))
-      f.scheduler.sync(app) returns Future.successful(Done)
       val promise = Promise[Unit]()
 
       When("The replace actor is started")
@@ -569,7 +551,6 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
       val instance = f.runningInstance(app)
       f.scheduler.getInstances(eq(app.id))(any) returns Future.successful(Seq(instance))
       f.scheduler.getInstance(eq(instance.instanceId))(any) returns Future.successful(Some(instance))
-      f.scheduler.sync(app) returns Future.successful(Done)
       val (_, readyCheck) = f.readinessResults(instance, check.name, ready = true)
       f.readinessCheckExecutor.execute(any[ReadinessCheckExecutor.ReadinessCheckSpec]) returns readyCheck
       val promise = Promise[Unit]()
@@ -597,7 +578,6 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
       val instance = f.runningInstance(app)
       f.scheduler.getInstances(eq(app.id))(any) returns Future.successful(Seq(instance))
       f.scheduler.getInstance(eq(instance.instanceId))(any) returns Future.successful(Some(instance))
-      f.scheduler.sync(app) returns Future.successful(Done)
       val (_, readyCheck) = f.readinessResults(instance, ready.name, ready = true)
       f.readinessCheckExecutor.execute(any[ReadinessCheckExecutor.ReadinessCheckSpec]) returns readyCheck
       val promise = Promise[Unit]()
@@ -628,8 +608,6 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
 
       val promise = Promise[Unit]()
       val newApp = app.copy(versionInfo = VersionInfo.forNewConfig(Timestamp(1)))
-      f.scheduler.sync(newApp) returns Future.successful(Done)
-      f.scheduler.schedule(newApp, 5) returns Future.successful(Done)
 
       val ref = f.replaceActor(newApp, promise)
       watch(ref)
@@ -668,8 +646,6 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
 
       val promise = Promise[Unit]()
       val newApp = app.copy(versionInfo = VersionInfo.forNewConfig(Timestamp(1)))
-      f.scheduler.sync(newApp) returns Future.successful(Done)
-      f.scheduler.schedule(newApp, 1) returns Future.successful(Done)
       val ref = f.replaceActor(newApp, promise)
       watch(ref)
 
@@ -722,6 +698,7 @@ class TaskReplaceActorTest extends AkkaUnitTest with Eventually {
     scheduler.stop(any[Instance], any)(any) returns Future.successful(Done)
     scheduler.decommission(any[Instance], any)(any) returns Future.successful(Done)
     scheduler.schedule(any, any)(any) returns Future.successful(Done)
+    scheduler.sync(any)(any) returns Future.successful(Done)
 
     def runningInstance(app: AppDefinition): Instance = {
       TestInstanceBuilder.newBuilder(app.id, version = app.version)

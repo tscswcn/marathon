@@ -10,7 +10,6 @@ import mesosphere.marathon.core.condition.Condition
 import mesosphere.marathon.core.deployment.impl.StartingBehavior.{PostStart, Sync}
 import mesosphere.marathon.core.event.{InstanceChanged, InstanceHealthChanged}
 import mesosphere.marathon.core.instance.Instance
-import mesosphere.marathon.core.launchqueue.LaunchQueue
 
 import scala.async.Async.{async, await}
 import scala.concurrent.Future
