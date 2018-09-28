@@ -9,18 +9,19 @@ import javax.ws.rs._
 import javax.ws.rs.core.{Context, MediaType, Response}
 import mesosphere.marathon.api.AuthResource
 import mesosphere.marathon.core.group.GroupManager
-import mesosphere.marathon.core.launchqueue.LaunchQueue
 import mesosphere.marathon.core.task.tracker.InstanceTracker
 import mesosphere.marathon.plugin.auth.{Authenticator, Authorizer, UpdateRunSpec, ViewRunSpec}
 import mesosphere.marathon.raml.Raml
+import mesosphere.marathon.scheduling.Scheduler
 import mesosphere.marathon.state.PathId._
+
 import scala.concurrent.ExecutionContext
 
 @Path("v2/queue")
 @Consumes(Array(MediaType.APPLICATION_JSON))
 class QueueResource @Inject() (
     clock: Clock,
-    launchQueue: LaunchQueue,
+    internalScheduler: Scheduler,
     instanceTracker: InstanceTracker,
     groupManager: GroupManager,
     val authenticator: Authenticator,
@@ -31,7 +32,7 @@ class QueueResource @Inject() (
   @Produces(Array(MediaType.APPLICATION_JSON))
   def index(@Context req: HttpServletRequest, @QueryParam("embed") embed: java.util.Set[String]): Response = authenticated(req) { implicit identity =>
     val embedLastUnusedOffers = embed.contains(QueueResource.EmbedLastUnusedOffers)
-    val maybeStats = result(launchQueue.listWithStatistics)
+    val maybeStats = result(internalScheduler.listWithStatistics)
     val stats = maybeStats.filter(t => t.inProgress && isAuthorized(ViewRunSpec, t.runSpec))
     ok(Raml.toRaml((stats, embedLastUnusedOffers, clock)))
   }
@@ -46,7 +47,7 @@ class QueueResource @Inject() (
     val appScheduled = result(instanceTracker.specInstances(appId)).exists(_.isScheduled)
     val maybeApp = if (appScheduled) groupManager.runSpec(appId) else None
     withAuthorization(UpdateRunSpec, maybeApp, notFound(s"Application $appId not found in tasks queue.")) { app =>
-      launchQueue.resetDelay(app)
+      internalScheduler.resetDelay(app)
       noContent
     }
   }

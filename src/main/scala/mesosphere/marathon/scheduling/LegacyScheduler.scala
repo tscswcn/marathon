@@ -31,7 +31,10 @@ case class LegacyScheduler(
     async {
       val instancesToSchedule = 0.until(count).map { _ => Instance.scheduled(runSpec, Instance.Id.forRunSpec(runSpec.id)) }
       await(instanceTracker.schedule(instancesToSchedule))
+
+      // Let launch queue manage task launcher actor.
       await(launchQueue.sync(runSpec))
+
       Done
     }
   }
@@ -44,7 +47,10 @@ case class LegacyScheduler(
        */
       assert(instance.isReserved && instance.state.goal == Goal.Stopped)
       await(instanceTracker.process(RescheduleReserved(instance, runSpec.version)))
+
+      // Let launch queue manage task launcher actor.
       await(launchQueue.sync(runSpec))
+
       Done
     }
   }
@@ -105,4 +111,6 @@ case class LegacyScheduler(
   override def processOffer(offer: Protos.Offer): Future[Done] = offerProcessor.processOffer(offer)
 
   override def processMesosUpdate(status: Protos.TaskStatus)(implicit ec: ExecutionContext): Future[Done] = statusUpdateProcessor.publish(status).map(_ => Done)
+
+  override def listWithStatistics = launchQueue.listWithStatistics
 }

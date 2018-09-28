@@ -222,7 +222,7 @@ class CoreModuleImpl @Inject() (
     () => marathonScheduler.getLocalRegion
   )
 
-  lazy val schedulingModule = new SchedulingModule(
+  override lazy val schedulingModule = new SchedulingModule(
     launcherModule.offerProcessor,
     instanceTrackerModule.instanceTracker,
     taskStatusUpdateProcessor,

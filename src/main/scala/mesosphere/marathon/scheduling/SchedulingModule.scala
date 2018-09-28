@@ -14,5 +14,5 @@ class SchedulingModule(
     killService: KillService,
     launchQueue: LaunchQueue) {
 
-  lazy val scheduler = LegacyScheduler(offerProcessor, instanceTracker, statusUpdateProcessor, killService, launchQueue)
+  lazy val scheduler: Scheduler = LegacyScheduler(offerProcessor, instanceTracker, statusUpdateProcessor, killService, launchQueue)
 }

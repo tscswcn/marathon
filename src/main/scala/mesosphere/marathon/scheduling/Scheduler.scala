@@ -4,6 +4,7 @@ package scheduling
 import akka.Done
 import mesosphere.marathon.core.instance.Instance
 import mesosphere.marathon.core.launcher.OfferProcessor
+import mesosphere.marathon.core.launchqueue.LaunchQueue.QueuedInstanceInfoWithStatistics
 import mesosphere.marathon.core.task.termination.KillReason
 import mesosphere.marathon.state.{PathId, RunSpec}
 import org.apache.mesos.Protos
@@ -95,4 +96,7 @@ trait Scheduler extends OfferProcessor {
   def processOffer(offer: Protos.Offer): Future[Done]
 
   def processMesosUpdate(status: Protos.TaskStatus)(implicit ec: ExecutionContext): Future[Done]
+
+  /** Returns all entries of the queue with embedded statistics */
+  def listWithStatistics: Future[Seq[QueuedInstanceInfoWithStatistics]]
 }

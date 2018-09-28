@@ -6,10 +6,10 @@ import mesosphere.marathon.api.TestAuthFixture
 import mesosphere.marathon.core.group.GroupManager
 import mesosphere.marathon.core.instance.Instance
 import mesosphere.marathon.core.launcher.OfferMatchResult
-import mesosphere.marathon.core.launchqueue.LaunchQueue
 import mesosphere.marathon.core.launchqueue.LaunchQueue.QueuedInstanceInfoWithStatistics
 import mesosphere.marathon.core.task.tracker.InstanceTracker
 import mesosphere.marathon.raml.{App, Raml}
+import mesosphere.marathon.scheduling.Scheduler
 import mesosphere.marathon.state.AppDefinition
 import mesosphere.marathon.state.PathId._
 import mesosphere.marathon.stream.Implicits._
@@ -27,12 +27,12 @@ class QueueResourceTest extends UnitTest with JerseyTest {
       clock: SettableClock = new SettableClock(),
       config: MarathonConf = mock[MarathonConf],
       auth: TestAuthFixture = new TestAuthFixture,
-      queue: LaunchQueue = mock[LaunchQueue],
+      scheduler: Scheduler = mock[Scheduler],
       instanceTracker: InstanceTracker = mock[InstanceTracker],
       groupManager: GroupManager = mock[GroupManager]) {
     val queueResource: QueueResource = new QueueResource(
       clock,
-      queue,
+      scheduler,
       instanceTracker,
       groupManager,
       auth.auth,
@@ -56,7 +56,7 @@ class QueueResourceTest extends UnitTest with JerseyTest {
         MarathonTestHelper.makeBasicOffer().build(),
         Seq(NoOfferMatchReason.InsufficientCpus, NoOfferMatchReason.DeclinedScarceResources),
         clock.now())
-      queue.listWithStatistics returns Future.successful(Seq(
+      scheduler.listWithStatistics returns Future.successful(Seq(
         QueuedInstanceInfoWithStatistics(
           app, inProgress = true, instancesLeftToLaunch = 23, finalInstanceCount = 23,
           backOffUntil = clock.now() + 100.seconds, startedAt = clock.now(),
@@ -100,7 +100,7 @@ class QueueResourceTest extends UnitTest with JerseyTest {
     "the generated info from the queue contains 0 if there is no delay" in new Fixture {
       //given
       val app = AppDefinition(id = "app".toRootPath)
-      queue.listWithStatistics returns Future.successful(Seq(
+      scheduler.listWithStatistics returns Future.successful(Seq(
         QueuedInstanceInfoWithStatistics(
           app, inProgress = true, instancesLeftToLaunch = 23, finalInstanceCount = 23,
           backOffUntil = clock.now() - 100.seconds, startedAt = clock.now(), rejectSummaryLastOffers = Map.empty,
@@ -146,7 +146,7 @@ class QueueResourceTest extends UnitTest with JerseyTest {
 
       //then
       response.getStatus should be(204)
-      verify(queue, times(1)).resetDelay(app)
+      verify(scheduler, times(1)).resetDelay(app)
     }
 
     "access without authentication is denied" in new Fixture {
