@@ -32,13 +32,29 @@ case class LegacyScheduler(
   }
 
   override def reschedule(instance: Instance, runSpec: RunSpec)(implicit ec: ExecutionContext): Future[Done] = async {
+    /* This method is actually and update from Goal.Stopped to Goal.Running. However, only instances with reservations
+       support such an update. MARATHON-8373 will introduce incarnations for ephemeral instances and enable rescheduling
+       support for all instances.
+     */
     assert(instance.isReserved && instance.state.goal == Goal.Stopped)
     await(instanceTracker.process(RescheduleReserved(instance, runSpec.version)))
     Done
   }
 
+  // TODO(karsten): Investigate how we can drop this method as it leaks implementation details of the scheduler.
   override def resetDelay(spec: RunSpec): Unit = launchQueue.resetDelay(spec)
 
+  /* The sync is responsible for two things:
+     1. Tell the [[LaunchQueueActor]] to start a [[TaskLauncherActor]].
+     2. Tell the [[TaskLauncherActor]] about the new run spec version to start.
+
+     Once we attach the run spec to an instance we can drop 2. This is addressed in MARATHON-8325.
+     Once the [[TaskLauncherActor]] is just a pure function called un [[OfferMatcherManagerActor]] we can drop 1. and
+     thus this method altogether. See MARATHON-8444 for that.
+
+     Overall this method should not be part of the future interface as it leaks implementation details of the scheduler
+     internals.
+   */
   override def sync(spec: RunSpec): Future[Done] = launchQueue.sync(spec)
 
   override def getInstances(runSpecId: PathId)(implicit ec: ExecutionContext): Future[Seq[Instance]] = instanceTracker.specInstances(runSpecId)
