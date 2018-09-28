@@ -471,8 +471,13 @@ class SchedulerActions(
 
       if (toAdd > 0) {
         logger.info(s"Queueing $toAdd new instances for ${runSpec.id} to the already $leftToLaunch queued ones")
-        // TODO(karsten): Use scheduler interface instead
-        //await(launchQueue.add(runSpec, toAdd))
+        // TODO(karsten): Use scheduler interface or instance tracker instead or get rid of the scale checks.
+        // TODO(karsten): Handle persistent instances correctly
+        val instancesToSchedule = 0.until(toAdd).map { _ => Instance.scheduled(runSpec, Instance.Id.forRunSpec(runSpec.id)) }
+        await(instanceTracker.schedule(instancesToSchedule))
+
+        // Let launch queue manage task launcher actor.
+        await(launchQueue.sync(runSpec))
       } else {
         logger.info(s"Already queued or started ${runningInstances.size} instances for ${runSpec.id}. Not scaling.")
       }

@@ -73,7 +73,7 @@ trait StartingBehavior extends ReadinessBehavior with StrictLogging { this: Acto
   }
 
   override def instanceConditionChanged(instanceId: Instance.Id): Unit = {
-    logger.debug(s"New instance $instanceId changed during app ${runSpec.id} scaling, " +
+    logger.info(s"New instance $instanceId changed during app ${runSpec.id} scaling, " +
       s"${readyInstances.size} ready ${healthyInstances.size} healthy need ${nrToStart.value}")
     checkFinished()
   }
