@@ -9,7 +9,7 @@ import com.typesafe.scalalogging.StrictLogging
 import mesosphere.marathon.core.condition.Condition
 import mesosphere.marathon.core.deployment.impl.StartingBehavior.{PostStart, Sync}
 import mesosphere.marathon.core.event.{InstanceChanged, InstanceHealthChanged}
-import mesosphere.marathon.core.instance.Instance
+import mesosphere.marathon.core.instance.{Goal, Instance}
 
 import scala.async.Async.{async, await}
 import scala.concurrent.Future
@@ -52,8 +52,15 @@ trait StartingBehavior extends ReadinessBehavior with StrictLogging { this: Acto
       logger.debug(s"Sync start instancesToStartNow=$instancesToStartNow appId=${runSpec.id}")
       if (instancesToStartNow > 0) {
         logger.info(s"Reconciling app ${runSpec.id} scaling: queuing $instancesToStartNow new instances")
-        // TODO(karsten): Distinguish between rescheduling of persistent instances and ephemeral instances.
-        await(scheduler.schedule(runSpec, instancesToStartNow))
+        // Reschedule stopped resident instances first.
+        val existingReservedStoppedInstances = instances
+          .filter(i => i.isReserved && i.state.goal == Goal.Stopped) // resident to relaunch
+          .take(instancesToStartNow)
+        await(scheduler.reschedule(existingReservedStoppedInstances, runSpec))
+
+        // Schedule remaining instances
+        val instancesToSchedule = math.max(0, instancesToStartNow - existingReservedStoppedInstances.length)
+        await(scheduler.schedule(runSpec, instancesToSchedule))
       }
       context.system.scheduler.scheduleOnce(StartingBehavior.syncInterval, self, Sync)
       Done // Otherwise we will pipe the result of scheduleOnce(...) call which is a Cancellable

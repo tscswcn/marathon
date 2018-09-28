@@ -193,6 +193,7 @@ class TaskStartActorTest extends AkkaUnitTest with Eventually {
     val readinessCheckExecutor: ReadinessCheckExecutor = mock[ReadinessCheckExecutor]
 
     scheduler.schedule(any, any)(any) returns Future.successful(Done)
+    scheduler.reschedule(any[Seq[Instance]], any)(any) returns Future.successful(Done)
 
     def instanceChange(app: AppDefinition, id: Instance.Id, condition: Condition): InstanceChanged = {
       val instance: Instance = mock[Instance]
