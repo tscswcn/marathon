@@ -31,6 +31,7 @@ case class LegacyScheduler(
     async {
       val instancesToSchedule = 0.until(count).map { _ => Instance.scheduled(runSpec, Instance.Id.forRunSpec(runSpec.id)) }
       await(instanceTracker.schedule(instancesToSchedule))
+      await(launchQueue.sync(runSpec))
       Done
     }
   }
@@ -43,6 +44,7 @@ case class LegacyScheduler(
        */
       assert(instance.isReserved && instance.state.goal == Goal.Stopped)
       await(instanceTracker.process(RescheduleReserved(instance, runSpec.version)))
+      await(launchQueue.sync(runSpec))
       Done
     }
   }

@@ -421,7 +421,7 @@ class SchedulerActions(
     */
   // FIXME: extract computation into a function that can be easily tested
   def scale(runSpec: RunSpec): Future[Done] = async {
-    logger.debug("Scale for run spec {}", runSpec)
+    logger.info("Scale for run spec {}", runSpec)
 
     val instances = await(instanceTracker.specInstances(runSpec.id))
     val runningInstances = instances.filter(_.isActive)
