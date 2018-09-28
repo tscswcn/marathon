@@ -25,10 +25,10 @@ case class LegacyScheduler(
   // TODO(karsten): Synchronize schedule and reschedule
   // we cannot process more Add requests for one runSpec in parallel because it leads to race condition.
   // See MARATHON-8320 for details. The queue handling is helping us ensure we add an instance at a time.
-  override def schedule(runSpec: RunSpec, count: Int)(implicit ec: ExecutionContext): Future[Seq[Instance]] = async {
+  override def schedule(runSpec: RunSpec, count: Int)(implicit ec: ExecutionContext): Future[Done] = async {
     val instancesToSchedule = 0.until(count).map { _ => Instance.scheduled(runSpec, Instance.Id.forRunSpec(runSpec.id)) }
     await(instanceTracker.schedule(instancesToSchedule))
-    instancesToSchedule
+    Done
   }
 
   override def reschedule(instance: Instance, runSpec: RunSpec)(implicit ec: ExecutionContext): Future[Done] = async {

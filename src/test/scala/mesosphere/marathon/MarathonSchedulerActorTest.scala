@@ -337,8 +337,9 @@ class MarathonSchedulerActorTest extends AkkaUnitTest with ImplicitSender with G
 
       expectMsg(DeploymentStarted(plan))
 
-      verify(f.queue, timeout(1000)).purge(app.id)
-      verify(f.queue, timeout(1000)).resetDelay(app.copy(instances = 0))
+      // TODO: See DeploymentActor.stopRunnable
+      // verify(f.queue, timeout(1000)).purge(app.id)
+      verify(f.scheduler, timeout(1000)).resetDelay(app.copy(instances = 0))
 
       system.eventStream.unsubscribe(probe.ref)
     }

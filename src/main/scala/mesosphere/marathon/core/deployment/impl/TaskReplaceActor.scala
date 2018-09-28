@@ -174,7 +174,7 @@ class TaskReplaceActor(
       logger.info(s"Reconciling instances during app $pathId restart: queuing $instancesToStartNow new instances")
       instancesStarted += instancesToStartNow
       // TODO(karsten): Distinguish between rescheduling persistent instances and scheduling new instances.
-      scheduler.schedule(runSpec, instancesToStartNow).map(_ => Done)
+      scheduler.schedule(runSpec, instancesToStartNow)
     } else {
       Future.successful(Done)
     }

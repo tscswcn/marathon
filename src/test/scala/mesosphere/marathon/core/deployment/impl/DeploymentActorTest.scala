@@ -136,7 +136,7 @@ class DeploymentActorTest extends AkkaUnitTest with GroupCreation with Eventuall
       scheduler.getInstance(Matchers.eq(instance4_1.instanceId))(any) returns Future.successful(Some(instance4_1))
 
       scheduler.sync(app2New) returns Future.successful(Done)
-      when(scheduler.schedule(same(app2New), any[Int])).thenAnswer(new Answer[Future[Done]] {
+      when(scheduler.schedule(same(app2New), any[Int])(any)).thenAnswer(new Answer[Future[Done]] {
         def answer(invocation: InvocationOnMock): Future[Done] = {
           for (i <- 0 until invocation.getArguments()(1).asInstanceOf[Int])
             system.eventStream.publish(instanceChanged(app2New, Condition.Running))
@@ -189,7 +189,7 @@ class DeploymentActorTest extends AkkaUnitTest with GroupCreation with Eventuall
       val plan = DeploymentPlan("foo", origGroup, targetGroup, List(DeploymentStep(List(RestartApplication(appNew)))), Timestamp.now())
 
       scheduler.sync(appNew) returns Future.successful(Done)
-      when(scheduler.schedule(same(appNew), any[Int])).thenAnswer(new Answer[Future[Done]] {
+      when(scheduler.schedule(same(appNew), any[Int])(any)).thenAnswer(new Answer[Future[Done]] {
         def answer(invocation: InvocationOnMock): Future[Done] = {
           for (i <- 0 until invocation.getArguments()(1).asInstanceOf[Int])
             system.eventStream.publish(instanceChanged(appNew, Condition.Running))
@@ -214,7 +214,7 @@ class DeploymentActorTest extends AkkaUnitTest with GroupCreation with Eventuall
 
       managerProbe.expectMsg(5.seconds, DeploymentFinished(plan, Success(Done)))
 
-      verify(scheduler).schedule(appNew, 2)
+      verify(scheduler).schedule(Matchers.eq(appNew), Matchers.eq(2))(any)
     }
 
     "Restart suspended app" in new Fixture {

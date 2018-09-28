@@ -19,7 +19,7 @@ trait Scheduler extends OfferProcessor {
     * @param count Number of new instance to schedule
     * @return The scheduled instance.
     */
-  def schedule(runSpec: RunSpec, count: Int = 1)(implicit ec: ExecutionContext): Future[Seq[Instance]]
+  def schedule(runSpec: RunSpec, count: Int)(implicit ec: ExecutionContext): Future[Done]
 
   /**
     * Reschedules a persistent instance with a new run spec.

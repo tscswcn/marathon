@@ -44,7 +44,7 @@ trait StartingBehavior extends ReadinessBehavior with StrictLogging { this: Acto
     case InstanceChanged(id, `version`, `pathId`, condition: Condition, instance) if condition.isTerminal || instance.isReservedTerminal =>
       logger.warn(s"New instance [$id] failed during app ${runSpec.id.toString} scaling, queueing another instance")
       instanceTerminated(id)
-      scheduler.schedule(runSpec).pipeTo(self)
+      scheduler.schedule(runSpec, 1).pipeTo(self)
 
     case Sync => async {
       val instances = await(scheduler.getInstances(runSpec.id))

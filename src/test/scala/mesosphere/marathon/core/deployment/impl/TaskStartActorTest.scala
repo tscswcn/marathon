@@ -1,6 +1,7 @@
 package mesosphere.marathon
 package core.deployment.impl
 
+import akka.Done
 import akka.actor.{OneForOneStrategy, Props, SupervisorStrategy}
 import akka.pattern.{Backoff, BackoffSupervisor}
 import akka.testkit.{TestActorRef, TestProbe}
@@ -170,10 +171,10 @@ class TaskStartActorTest extends AkkaUnitTest with Eventually {
       val ref = f.startActor(app, app.instances, promise)
       watch(ref)
       // 4 initial instances should be added to the launch queue
-      eventually { verify(f.scheduler, times(1)).schedule(eq(app), eq(5)) }
+      eventually { verify(f.scheduler, times(1)).schedule(eq(app), eq(5))(any) }
       // let existing task die
       system.eventStream.publish(f.instanceChange(app, Instance.Id.forRunSpec(app.id), Condition.Error))
-      eventually { verify(f.scheduler, times(1)).schedule(eq(app), eq(1)) }
+      eventually { verify(f.scheduler, times(1)).schedule(eq(app), eq(1))(any) }
       // let 5 other tasks start successfully
       List(0, 1, 2, 3, 4) foreach { i =>
         system.eventStream.publish(f.instanceChange(app, Instance.Id.forRunSpec(app.id), Running))
@@ -191,7 +192,7 @@ class TaskStartActorTest extends AkkaUnitTest with Eventually {
     val status: DeploymentStatus = mock[DeploymentStatus]
     val readinessCheckExecutor: ReadinessCheckExecutor = mock[ReadinessCheckExecutor]
 
-    scheduler.schedule(any, any) returns Future.successful(Seq.empty)
+    scheduler.schedule(any, any)(any) returns Future.successful(Done)
 
     def instanceChange(app: AppDefinition, id: Instance.Id, condition: Condition): InstanceChanged = {
       val instance: Instance = mock[Instance]
