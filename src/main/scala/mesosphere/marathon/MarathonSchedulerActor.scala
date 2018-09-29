@@ -23,7 +23,7 @@ import mesosphere.marathon.stream.Implicits._
 import mesosphere.mesos.Constraints
 import org.apache.mesos
 import org.apache.mesos.Protos.{Status, TaskState}
-import org.apache.mesos.SchedulerDriver
+import org.apache.mesos.{Protos, SchedulerDriver}
 
 import scala.async.Async.{async, await}
 import scala.concurrent.{ExecutionContext, Future}
@@ -113,31 +113,13 @@ class MarathonSchedulerActor private (
 
     case LeadershipTransition.ElectedAsLeaderAndReady => // ignore
 
-    case ReconcileTasks =>
-      import akka.pattern.pipe
-      import context.dispatcher
-      val reconcileFuture = activeReconciliation match {
-        case None =>
-          logger.info("initiate task reconciliation")
-          val newFuture = schedulerActions.reconcileTasks(driver)
-          activeReconciliation = Some(newFuture)
-          newFuture.failed.foreach {
-            case NonFatal(e) => logger.error("error while reconciling tasks", e)
-          }
-          newFuture
-            // the self notification MUST happen before informing the initiator
-            // if we want to ensure that we trigger a new reconciliation for
-            // the first call after the last ReconcileTasks.answer has been received.
-            .andThen { case _ => self ! ReconcileFinished }
-        case Some(active) =>
-          logger.info("task reconciliation still active, reusing result")
-          active
-      }
-      reconcileFuture.map(_ => ReconcileTasks.answer).pipeTo(sender)
+    case ReconcileTasks(taskStatuses) =>
+      driver.reconcileTasks(taskStatuses.asJavaCollection)
+      sender ! Done
 
-    case ReconcileFinished =>
-      logger.info("task reconciliation has finished")
-      activeReconciliation = None
+    case ReconcileImplicitly =>
+      driver.reconcileTasks(java.util.Arrays.asList())
+      sender ! Done
 
     case ReconcileHealthChecks =>
       schedulerActions.reconcileHealthChecks()
@@ -323,11 +305,8 @@ object MarathonSchedulerActor {
     def answer: Event
   }
 
-  case object ReconcileTasks extends Command {
-    def answer: Event = TasksReconciled
-  }
-
-  private case object ReconcileFinished
+  case class ReconcileTasks(tasksToReconcile: Set[mesos.Protos.TaskStatus])
+  case object ReconcileImplicitly
 
   case object ReconcileHealthChecks
 
@@ -372,43 +351,6 @@ class SchedulerActions(
   def startRunSpec(runSpec: RunSpec): Future[Done] = {
     logger.info(s"Starting runSpec ${runSpec.id}")
     scale(runSpec)
-  }
-
-  /**
-    * Make sure all runSpecs are running the configured amount of tasks.
-    *
-    * Should be called some time after the framework re-registers,
-    * to give Mesos enough time to deliver task updates.
-    *
-    * @param driver scheduler driver
-    */
-  def reconcileTasks(driver: SchedulerDriver): Future[Status] = async {
-    val root = await(groupRepository.root())
-
-    val runSpecIds = root.transitiveRunSpecIds.toSet
-    val instances = await(instanceTracker.instancesBySpec())
-
-    val knownTaskStatuses = runSpecIds.flatMap { runSpecId =>
-      TaskStatusCollector.collectTaskStatusFor(instances.specInstances(runSpecId))
-    }
-
-    (instances.allSpecIdsWithInstances -- runSpecIds).foreach { unknownId =>
-      logger.warn(
-        s"RunSpec $unknownId exists in InstanceTracker, but not store. " +
-          "The run spec was likely terminated. Will now expunge."
-      )
-      instances.specInstances(unknownId).foreach { orphanTask =>
-        logger.info(s"Killing ${orphanTask.instanceId}")
-        killService.killInstance(orphanTask, KillReason.Orphaned)
-      }
-    }
-
-    logger.info("Requesting task reconciliation with the Mesos master")
-    logger.debug(s"Tasks to reconcile: $knownTaskStatuses")
-    if (knownTaskStatuses.nonEmpty) driver.reconcileTasks(knownTaskStatuses.asJavaCollection) // linter:ignore UseIfExpression
-
-    // in addition to the known statuses send an empty list to get the unknown
-    driver.reconcileTasks(java.util.Arrays.asList())
   }
 
   def reconcileHealthChecks(): Unit = {

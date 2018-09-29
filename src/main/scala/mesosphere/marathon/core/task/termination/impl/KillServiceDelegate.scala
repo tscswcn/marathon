@@ -14,7 +14,7 @@ import scala.collection.immutable.Seq
 private[termination] class KillServiceDelegate(actorRef: ActorRef) extends KillService with StrictLogging {
   import KillServiceActor._
 
-  override def killInstances(instances: Seq[Instance], reason: KillReason): Future[Done] = {
+  override def  killInstances(instances: Seq[Instance], reason: KillReason): Future[Done] = {
     logger.info(
       s"Killing ${instances.size} tasks for reason: $reason (ids: {} ...)",
       instances.take(5).map(_.instanceId).mkString(","))

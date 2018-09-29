@@ -11,6 +11,7 @@ import akka.util.Timeout
 import com.google.common.util.concurrent.AbstractExecutionThreadService
 import com.typesafe.scalalogging.StrictLogging
 import javax.inject.{Inject, Named}
+
 import mesosphere.marathon.MarathonSchedulerActor._
 import mesosphere.marathon.core.deployment.{DeploymentManager, DeploymentPlan, DeploymentStepInfo}
 import mesosphere.marathon.core.election.{ElectionCandidate, ElectionService}
@@ -22,7 +23,7 @@ import mesosphere.marathon.core.storage.store.PersistenceStore
 import mesosphere.marathon.state.{AppDefinition, PathId, Timestamp}
 import mesosphere.marathon.storage.migration.Migration
 import mesosphere.util.PromiseActor
-import org.apache.mesos.SchedulerDriver
+import org.apache.mesos.{Protos, SchedulerDriver}
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
@@ -139,6 +140,9 @@ class MarathonSchedulerService @Inject() (
     instances: Seq[Instance]): Unit = {
     schedulerActor ! KillTasks(appId, instances)
   }
+
+  def reconcileImplicitly(): Future[Done] =
+    def reconcileTasks(Set[Protos.TaskStatus]): Future[Done] =
 
   //Begin Service interface
 
