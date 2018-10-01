@@ -11,7 +11,6 @@ import mesosphere.marathon.core.task.termination.{KillReason, KillService}
 import mesosphere.marathon.core.task.tracker.InstanceTracker
 import mesosphere.marathon.core.task.update.TaskStatusUpdateProcessor
 import mesosphere.marathon.state.{PathId, RunSpec}
-import mesosphere.marathon.util.WorkQueue
 import org.apache.mesos.Protos
 
 import scala.async.Async.{async, await}
@@ -24,24 +23,18 @@ case class LegacyScheduler(
     killService: KillService,
     launchQueue: LaunchQueue) extends Scheduler with StrictLogging {
 
-  // We cannot process more Add/Update requests for one runSpec in parallel because it leads to race condition.
-  // See MARATHON-8320 for details. The queue handling is helping us ensure we change one instance at a time.
-  private[this] val serializeUpdates: WorkQueue = WorkQueue("LegacyScheduler", maxConcurrent = 1, maxQueueLength = Int.MaxValue)
+  override def schedule(runSpec: RunSpec, count: Int)(implicit ec: ExecutionContext): Future[Done] = async {
+    // Let launch queue manage task launcher actor.
+    await(launchQueue.sync(runSpec))
 
-  override def schedule(runSpec: RunSpec, count: Int)(implicit ec: ExecutionContext): Future[Done] = serializeUpdates {
-    async {
-      // Let launch queue manage task launcher actor.
-      await(launchQueue.sync(runSpec))
+    val instancesToSchedule = 0.until(count).map { _ => Instance.scheduled(runSpec, Instance.Id.forRunSpec(runSpec.id)) }
+    await(instanceTracker.schedule(instancesToSchedule))
 
-      val instancesToSchedule = 0.until(count).map { _ => Instance.scheduled(runSpec, Instance.Id.forRunSpec(runSpec.id)) }
-      await(instanceTracker.schedule(instancesToSchedule))
-
-      logger.info(s"Scheduled ${instancesToSchedule.map(_.instanceId)}")
-      Done
-    }
+    logger.info(s"Scheduled ${instancesToSchedule.map(_.instanceId)}")
+    Done
   }
 
-  override def reschedule(instance: Instance, runSpec: RunSpec)(implicit ec: ExecutionContext): Future[Done] = serializeUpdates {
+  override def reschedule(instance: Instance, runSpec: RunSpec)(implicit ec: ExecutionContext): Future[Done] =
     async {
       // Let launch queue manage task launcher actor.
       await(launchQueue.sync(runSpec))
@@ -56,7 +49,6 @@ case class LegacyScheduler(
       logger.info(s"Rescheduled ${instance.instanceId}")
       Done
     }
-  }
 
   // TODO(karsten): Investigate how we can drop this method as it leaks implementation details of the scheduler.
   override def resetDelay(spec: RunSpec): Unit = launchQueue.resetDelay(spec)
@@ -72,44 +64,39 @@ case class LegacyScheduler(
      Overall this method should not be part of the future interface as it leaks implementation details of the scheduler
      internals.
    */
-  override def sync(spec: RunSpec)(implicit ec: ExecutionContext): Future[Done] = serializeUpdates { launchQueue.sync(spec) }
+  override def sync(spec: RunSpec)(implicit ec: ExecutionContext): Future[Done] = launchQueue.sync(spec)
 
-  override def getInstances(runSpecId: PathId)(implicit ec: ExecutionContext): Future[Seq[Instance]] = serializeUpdates {
+  override def getInstances(runSpecId: PathId)(implicit ec: ExecutionContext): Future[Seq[Instance]] =
     instanceTracker.specInstances(runSpecId)
-  }
 
-  override def getInstance(instanceId: Instance.Id)(implicit ec: ExecutionContext): Future[Option[Instance]] = serializeUpdates {
+  override def getInstance(instanceId: Instance.Id)(implicit ec: ExecutionContext): Future[Option[Instance]] =
     instanceTracker.get(instanceId)
-  }
 
   @SuppressWarnings(Array("all")) // async/await
-  override def run(instances: Seq[Instance])(implicit ec: ExecutionContext): Future[Done] = serializeUpdates {
+  override def run(instances: Seq[Instance])(implicit ec: ExecutionContext): Future[Done] =
     async {
       val work = Future.sequence(instances.map { i => instanceTracker.setGoal(i.instanceId, Goal.Running) })
       await(work)
       Done
     }
-  }
 
   @SuppressWarnings(Array("all")) // async/await
-  override def decommission(instances: Seq[Instance], killReason: KillReason)(implicit ec: ExecutionContext): Future[Done] = serializeUpdates {
+  override def decommission(instances: Seq[Instance], killReason: KillReason)(implicit ec: ExecutionContext): Future[Done] =
     async {
       val work = Future.sequence(instances.map { i => instanceTracker.setGoal(i.instanceId, Goal.Decommissioned) })
       await(work)
 
       await(killService.killInstances(instances, killReason))
     }
-  }
 
   @SuppressWarnings(Array("all")) // async/await
-  override def stop(instances: Seq[Instance], killReason: KillReason)(implicit ec: ExecutionContext): Future[Done] = serializeUpdates {
+  override def stop(instances: Seq[Instance], killReason: KillReason)(implicit ec: ExecutionContext): Future[Done] =
     async {
       val work = Future.sequence(instances.map { i => instanceTracker.setGoal(i.instanceId, Goal.Stopped) })
       await(work)
 
       await(killService.killInstances(instances, killReason))
     }
-  }
 
   override def processOffer(offer: Protos.Offer): Future[Done] = offerProcessor.processOffer(offer)
 
