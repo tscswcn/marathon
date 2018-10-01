@@ -186,8 +186,7 @@ class TaskReplaceActor(
         val instancesToSchedule = math.max(0, instancesToStartNow - existingReservedStoppedInstances.length)
         await(scheduler.schedule(runSpec, instancesToSchedule))
       }
-    }
-    else {
+    } else {
       Future.successful(Done)
     }
   }

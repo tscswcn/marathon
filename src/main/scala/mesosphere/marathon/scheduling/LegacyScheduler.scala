@@ -2,6 +2,7 @@ package mesosphere.marathon
 package scheduling
 
 import akka.Done
+import com.typesafe.scalalogging.StrictLogging
 import mesosphere.marathon.core.instance.update.InstanceUpdateOperation.RescheduleReserved
 import mesosphere.marathon.core.instance.{Goal, Instance}
 import mesosphere.marathon.core.launcher.OfferProcessor
@@ -21,7 +22,7 @@ case class LegacyScheduler(
     instanceTracker: InstanceTracker,
     statusUpdateProcessor: TaskStatusUpdateProcessor,
     killService: KillService,
-    launchQueue: LaunchQueue) extends Scheduler {
+    launchQueue: LaunchQueue) extends Scheduler with StrictLogging {
 
   // We cannot process more Add/Update requests for one runSpec in parallel because it leads to race condition.
   // See MARATHON-8320 for details. The queue handling is helping us ensure we change one instance at a time.
@@ -29,18 +30,22 @@ case class LegacyScheduler(
 
   override def schedule(runSpec: RunSpec, count: Int)(implicit ec: ExecutionContext): Future[Done] = serializeUpdates {
     async {
-      val instancesToSchedule = 0.until(count).map { _ => Instance.scheduled(runSpec, Instance.Id.forRunSpec(runSpec.id)) }
-      await(instanceTracker.schedule(instancesToSchedule))
-
       // Let launch queue manage task launcher actor.
       await(launchQueue.sync(runSpec))
 
+      val instancesToSchedule = 0.until(count).map { _ => Instance.scheduled(runSpec, Instance.Id.forRunSpec(runSpec.id)) }
+      await(instanceTracker.schedule(instancesToSchedule))
+
+      logger.info(s"Scheduled ${instancesToSchedule.map(_.instanceId)}")
       Done
     }
   }
 
   override def reschedule(instance: Instance, runSpec: RunSpec)(implicit ec: ExecutionContext): Future[Done] = serializeUpdates {
     async {
+      // Let launch queue manage task launcher actor.
+      await(launchQueue.sync(runSpec))
+
       /* This method is actually and update from Goal.Stopped to Goal.Running. However, only instances with reservations
          support such an update. MARATHON-8373 will introduce incarnations for ephemeral instances and enable rescheduling
          support for all instances.
@@ -48,9 +53,7 @@ case class LegacyScheduler(
       assert(instance.isReserved && instance.state.goal == Goal.Stopped)
       await(instanceTracker.process(RescheduleReserved(instance, runSpec.version)))
 
-      // Let launch queue manage task launcher actor.
-      await(launchQueue.sync(runSpec))
-
+      logger.info(s"Rescheduled ${instance.instanceId}")
       Done
     }
   }
