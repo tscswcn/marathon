@@ -12,6 +12,7 @@ import mesosphere.marathon.core.election.LeadershipTransition
 import mesosphere.marathon.core.event.DeploymentSuccess
 import mesosphere.marathon.core.health.HealthCheckManager
 import mesosphere.marathon.core.instance.{Goal, Instance}
+import mesosphere.marathon.core.instance.update.InstanceUpdateOperation.RescheduleReserved
 import mesosphere.marathon.core.launchqueue.LaunchQueue
 import mesosphere.marathon.core.task.Task
 import mesosphere.marathon.core.task.termination.{KillReason, KillService}
@@ -472,8 +473,17 @@ class SchedulerActions(
       if (toAdd > 0) {
         logger.info(s"Queueing $toAdd new instances for ${runSpec.id} to the already $leftToLaunch queued ones")
         // TODO(karsten): Use scheduler interface or instance tracker instead or get rid of the scale checks.
-        // TODO(karsten): Handle persistent instances correctly
-        val instancesToSchedule = 0.until(toAdd).map { _ => Instance.scheduled(runSpec, Instance.Id.forRunSpec(runSpec.id)) }
+
+        // Reschedule stopped resident instances first.
+        val existingReservedStoppedInstances = instances
+          .filter(i => i.isReserved && i.state.goal == Goal.Stopped) // resident to relaunch
+          .take(toAdd)
+          .map(RescheduleReserved(_, runSpec.version))
+        await(Future.sequence(existingReservedStoppedInstances.map(instanceTracker.process)).map(_ => Done))
+
+        // Schedule remaining instances
+        val leftToAdd = math.max(0, toAdd - existingReservedStoppedInstances.length)
+        val instancesToSchedule = 0.until(leftToAdd).map { _ => Instance.scheduled(runSpec, Instance.Id.forRunSpec(runSpec.id)) }
         await(instanceTracker.schedule(instancesToSchedule))
 
         // Let launch queue manage task launcher actor.
