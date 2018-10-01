@@ -174,8 +174,10 @@ class TaskReplaceActor(
       logger.info(s"Reconciling instances during app $pathId restart: queuing $instancesToStartNow new instances")
       instancesStarted += instancesToStartNow
 
+      val allInstances = await(scheduler.getInstances(runSpec.id))
+
       // Reschedule stopped resident instances first.
-      val existingReservedStoppedInstances = currentInstances
+      val existingReservedStoppedInstances = allInstances
         .filter(i => i.isReserved && i.state.goal == Goal.Stopped) // resident to relaunch
         .take(instancesToStartNow)
       await(scheduler.reschedule(existingReservedStoppedInstances, runSpec))
