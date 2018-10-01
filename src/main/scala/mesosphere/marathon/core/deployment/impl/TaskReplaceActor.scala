@@ -171,14 +171,14 @@ class TaskReplaceActor(
 
   // Careful not to make this method completely asynchronous - it changes local actor's state `instancesStarted`.
   // Only launching new instances needs to be asynchronous.
-  def launchInstances(): Future[Done] = serializeUpdates {
+  def launchInstances(): Future[Done] =
     val leftCapacity = math.max(0, ignitionStrategy.maxCapacity - oldInstanceIds.size - instancesStarted)
     val instancesNotStartedYet = math.max(0, runSpec.instances - instancesStarted)
     val instancesToStartNow = math.min(instancesNotStartedYet, leftCapacity)
     if (instancesToStartNow > 0) {
       logger.info(s"Reconciling instances during app $pathId restart: queuing $instancesToStartNow new instances")
       instancesStarted += instancesToStartNow
-      async {
+      serializeUpdates(async {
         val allInstances = await(scheduler.getInstances(runSpec.id))
 
         // Reschedule stopped resident instances first.
@@ -190,11 +190,10 @@ class TaskReplaceActor(
         // Schedule remaining instances
         val instancesToSchedule = math.max(0, instancesToStartNow - existingReservedStoppedInstances.length)
         await(scheduler.schedule(runSpec, instancesToSchedule))
-      }
+      })
     } else {
       Future.successful(Done)
     }
-  }
 
   @SuppressWarnings(Array("all")) // async/await
   def killNextOldInstance(maybeNewInstanceId: Option[Instance.Id] = None): Unit = {
