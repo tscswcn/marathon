@@ -122,7 +122,7 @@ trait ReadinessBehavior extends StrictLogging { this: Actor =>
 
     def instanceRunBehavior: Receive = {
       def markAsHealthyAndReady(instance: Instance): Unit = {
-        logger.debug(s"Started instance is ready: ${instance.instanceId}")
+        logger.info(s"Started instance is ready: ${instance.instanceId}")
         healthy += instance.instanceId
         ready += instance.instanceId
         instanceConditionChanged(instance.instanceId)
