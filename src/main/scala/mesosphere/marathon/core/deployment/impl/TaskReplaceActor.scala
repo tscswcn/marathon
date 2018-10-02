@@ -13,7 +13,6 @@ import mesosphere.marathon.core.readiness.ReadinessCheckExecutor
 import mesosphere.marathon.core.task.termination.InstanceChangedPredicates.considerTerminal
 import mesosphere.marathon.core.task.termination.KillReason
 import mesosphere.marathon.state.RunSpec
-import mesosphere.marathon.util.WorkQueue
 
 import scala.async.Async.{async, await}
 import scala.collection.{SortedSet, mutable}
@@ -32,10 +31,6 @@ class TaskReplaceActor(
   import TaskReplaceActor._
 
   // compute all values ====================================================================================
-
-  // We cannot process more Add/Update requests for one runSpec in parallel because it leads to race condition.
-  // See MARATHON-8320 for details. The queue handling is helping us ensure we change one instance at a time.
-  private[this] val serializeUpdates: WorkQueue = WorkQueue("LegacyScheduler", maxConcurrent = 1, maxQueueLength = Int.MaxValue)
 
   // All running instances of this app
   //
@@ -132,16 +127,16 @@ class TaskReplaceActor(
       logger.warn(s"New instance $id is terminal on agent ${agentInfo.agentId} during app $pathId restart: $condition reservation: $reservation")
       instanceTerminated(id)
       instancesStarted -= 1
-      launchInstances().pipeTo(self)
+      context.become(launching)
+      scheduler.getInstances(runSpec.id).map(Frame).pipeTo(self)
 
     // Old instance successfully killed
     case InstanceChanged(id, _, `pathId`, condition, _) if oldInstanceIds(id) && considerTerminal(condition) =>
       logger.info(s"Instance $id became $condition. Launching more instances.")
       oldInstanceIds -= id
       instanceTerminated(id)
-      launchInstances()
-        .map(_ => CheckFinished)
-        .pipeTo(self)
+      context.become(launching)
+      scheduler.getInstances(runSpec.id).map(Frame).pipeTo(self)
 
     // Ignore change events, that are not handled in parent receives
     case _: InstanceChanged =>
@@ -156,6 +151,44 @@ class TaskReplaceActor(
 
     case CheckFinished => checkFinished()
 
+  }
+
+  private def launching: Receive = {
+    case Frame(instances) =>
+      val leftCapacity = math.max(0, ignitionStrategy.maxCapacity - oldInstanceIds.size - instancesStarted)
+      val instancesNotStartedYet = math.max(0, runSpec.instances - instancesStarted)
+      val instancesToStartNow = math.min(instancesNotStartedYet, leftCapacity)
+      if (instancesToStartNow > 0) {
+        logger.info(s"Reconciling instances during app $pathId restart: queuing $instancesToStartNow new instances")
+        instancesStarted += instancesToStartNow
+        async {
+
+          // Reschedule stopped resident instances first.
+          val existingReservedStoppedInstances = instances
+            .filter(i => i.isReserved && i.state.goal == Goal.Stopped) // resident to relaunch
+            .take(instancesToStartNow)
+          await(scheduler.reschedule(existingReservedStoppedInstances, runSpec))
+
+          // Schedule remaining instances
+          val instancesToSchedule = math.max(0, instancesToStartNow - existingReservedStoppedInstances.length)
+          await(scheduler.schedule(runSpec, instancesToSchedule))
+          LaunchDone
+        }.pipeTo(self)
+      } else {
+        self ! LaunchDone
+      }
+
+    case LaunchDone =>
+      context.become(initialized)
+      self ! CheckFinished
+      unstashAll()
+
+    case Status.Failure(cause) =>
+      // escalate this failure
+      throw new IllegalStateException("while loading tasks", cause)
+
+    case stashMe: AnyRef =>
+      stash()
   }
 
   override def instanceConditionChanged(instanceId: Instance.Id): Unit = {
@@ -178,7 +211,7 @@ class TaskReplaceActor(
     if (instancesToStartNow > 0) {
       logger.info(s"Reconciling instances during app $pathId restart: queuing $instancesToStartNow new instances")
       instancesStarted += instancesToStartNow
-      serializeUpdates(async {
+      async {
         val allInstances = await(scheduler.getInstances(runSpec.id))
 
         // Reschedule stopped resident instances first.
@@ -190,7 +223,7 @@ class TaskReplaceActor(
         // Schedule remaining instances
         val instancesToSchedule = math.max(0, instancesToStartNow - existingReservedStoppedInstances.length)
         await(scheduler.schedule(runSpec, instancesToSchedule))
-      })
+      }
     } else {
       Future.successful(Done)
     }
@@ -238,6 +271,9 @@ class TaskReplaceActor(
 object TaskReplaceActor extends StrictLogging {
 
   object CheckFinished
+
+  case class Frame(instances: Seq[Instance])
+  case object LaunchDone
 
   //scalastyle:off
   def props(
