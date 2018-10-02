@@ -4,7 +4,6 @@ import akka.Done
 import akka.event.EventStream
 import akka.testkit.TestProbe
 import mesosphere.AkkaUnitTest
-import mesosphere.marathon.core.base.CrashStrategy
 import mesosphere.marathon.core.event._
 import mesosphere.marathon.core.launchqueue.LaunchQueue
 import mesosphere.marathon.state.Region
