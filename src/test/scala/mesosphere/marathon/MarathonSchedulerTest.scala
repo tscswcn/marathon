@@ -30,7 +30,7 @@ class MarathonSchedulerTest extends AkkaUnitTest {
     val probe: TestProbe = TestProbe()
     val eventBus: EventStream = system.eventStream
     val scheduler: scheduling.Scheduler = mock[scheduling.Scheduler]
-    val crashStrategy: CrashStrategy = mock[CrashStrategy]
+    val crashStrategy: TestCrashStrategy = new TestCrashStrategy
     val marathonScheduler: MarathonScheduler = new MarathonScheduler(
       eventBus,
       scheduler,

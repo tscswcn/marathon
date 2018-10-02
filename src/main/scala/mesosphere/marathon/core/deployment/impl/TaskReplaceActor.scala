@@ -171,7 +171,7 @@ class TaskReplaceActor(
 
   // Careful not to make this method completely asynchronous - it changes local actor's state `instancesStarted`.
   // Only launching new instances needs to be asynchronous.
-  def launchInstances(): Future[Done] =
+  def launchInstances(): Future[Done] = {
     val leftCapacity = math.max(0, ignitionStrategy.maxCapacity - oldInstanceIds.size - instancesStarted)
     val instancesNotStartedYet = math.max(0, runSpec.instances - instancesStarted)
     val instancesToStartNow = math.min(instancesNotStartedYet, leftCapacity)
@@ -194,6 +194,7 @@ class TaskReplaceActor(
     } else {
       Future.successful(Done)
     }
+  }
 
   @SuppressWarnings(Array("all")) // async/await
   def killNextOldInstance(maybeNewInstanceId: Option[Instance.Id] = None): Unit = {
