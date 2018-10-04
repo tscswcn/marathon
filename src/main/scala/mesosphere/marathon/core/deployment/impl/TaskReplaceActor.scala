@@ -5,6 +5,8 @@ import akka.Done
 import akka.actor._
 import akka.event.EventStream
 import akka.pattern._
+import akka.stream.{ActorMaterializer, OverflowStrategy}
+import akka.stream.scaladsl.{Sink, Source}
 import com.typesafe.scalalogging.StrictLogging
 import mesosphere.marathon.core.event._
 import mesosphere.marathon.core.instance.{Goal, Instance}
@@ -13,6 +15,7 @@ import mesosphere.marathon.core.readiness.ReadinessCheckExecutor
 import mesosphere.marathon.core.task.termination.InstanceChangedPredicates.considerTerminal
 import mesosphere.marathon.core.task.termination.KillReason
 import mesosphere.marathon.state.RunSpec
+import mesosphere.marathon.stream.EnrichedSource
 
 import scala.async.Async.{async, await}
 import scala.collection.{SortedSet, mutable}
@@ -63,6 +66,18 @@ class TaskReplaceActor(
   // The number of started instances. Defaults to the number of already started instances.
   var instancesStarted: Int = instancesAlreadyStarted.size
 
+  // We instantiate the materializer here so that all materialized streams end up as children of this actor
+  implicit val materializer = ActorMaterializer()
+
+  val bufferSize = Int.MaxValue
+  val overflowStrategy = OverflowStrategy.fail
+  val frames = EnrichedSource.eventBusSource(classOf[InstanceChanged], eventBus, bufferSize, overflowStrategy).mapAsync(1) { event =>
+    async {
+      val instances = await(scheduler.getInstances(runSpec.id))
+      Frame(instances, event)
+    }
+  }
+
   @SuppressWarnings(Array("all")) // async/await
   override def preStart(): Unit = {
     super.preStart()
@@ -72,6 +87,8 @@ class TaskReplaceActor(
 
     // reconcile the state from a possible previous run
     reconcileAlreadyStartedInstances()
+
+    frames.runWith(Sink.actorRef(self, NoMoreFrames))
 
     async {
       // Update run spec in task launcher actor.
@@ -86,7 +103,8 @@ class TaskReplaceActor(
       for (_ <- 0 until ignitionStrategy.nrToKillImmediately) killNextOldInstance()
 
       // start new instances, if possible
-      val launched = await(launchInstances())
+      val instances = await(scheduler.getInstances(runSpec.id))
+      val launched = await(launchInstances(instances))
 
       // reset the launch queue delay
       logger.info("Resetting the backoff delay before restarting the runSpec")
@@ -123,23 +141,22 @@ class TaskReplaceActor(
 
   def replaceBehavior: Receive = {
     // New instance failed to start, restart it
-    case InstanceChanged(id, `version`, `pathId`, condition, Instance(_, Some(agentInfo), _, _, _, _, reservation)) if !oldInstanceIds(id) && considerTerminal(condition) =>
+    case Frame(instances, InstanceChanged(id, `version`, `pathId`, condition, Instance(_, Some(agentInfo), _, _, _, _, reservation))) if !oldInstanceIds(id) && considerTerminal(condition) =>
       logger.warn(s"New instance $id is terminal on agent ${agentInfo.agentId} during app $pathId restart: $condition reservation: $reservation")
       instanceTerminated(id)
       instancesStarted -= 1
-      context.become(launching)
-      scheduler.getInstances(runSpec.id).map(Frame).pipeTo(self)
+      launchInstances(instances).pipeTo(self)
 
     // Old instance successfully killed
-    case InstanceChanged(id, _, `pathId`, condition, _) if oldInstanceIds(id) && considerTerminal(condition) =>
+    case Frame(instances, InstanceChanged(id, _, `pathId`, condition, _)) if oldInstanceIds(id) && considerTerminal(condition) =>
       logger.info(s"Instance $id became $condition. Launching more instances.")
       oldInstanceIds -= id
       instanceTerminated(id)
-      context.become(launching)
-      scheduler.getInstances(runSpec.id).map(Frame).pipeTo(self)
+      launchInstances(instances).map(_ => CheckFinished).pipeTo(self)
 
     // Ignore change events, that are not handled in parent receives
-    case _: InstanceChanged =>
+    case Frame(_, event) =>
+      self ! event
 
     case Status.Failure(e) =>
       // This is the result of failed launchQueue.addAsync(...) call. Log the message and
@@ -151,44 +168,6 @@ class TaskReplaceActor(
 
     case CheckFinished => checkFinished()
 
-  }
-
-  private def launching: Receive = {
-    case Frame(instances) =>
-      val leftCapacity = math.max(0, ignitionStrategy.maxCapacity - oldInstanceIds.size - instancesStarted)
-      val instancesNotStartedYet = math.max(0, runSpec.instances - instancesStarted)
-      val instancesToStartNow = math.min(instancesNotStartedYet, leftCapacity)
-      if (instancesToStartNow > 0) {
-        logger.info(s"Reconciling instances during app $pathId restart: queuing $instancesToStartNow new instances")
-        instancesStarted += instancesToStartNow
-        async {
-
-          // Reschedule stopped resident instances first.
-          val existingReservedStoppedInstances = instances
-            .filter(i => i.isReserved && i.state.goal == Goal.Stopped) // resident to relaunch
-            .take(instancesToStartNow)
-          await(scheduler.reschedule(existingReservedStoppedInstances, runSpec))
-
-          // Schedule remaining instances
-          val instancesToSchedule = math.max(0, instancesToStartNow - existingReservedStoppedInstances.length)
-          await(scheduler.schedule(runSpec, instancesToSchedule))
-          LaunchDone
-        }.pipeTo(self)
-      } else {
-        self ! LaunchDone
-      }
-
-    case LaunchDone =>
-      context.become(initialized)
-      self ! CheckFinished
-      unstashAll()
-
-    case Status.Failure(cause) =>
-      // escalate this failure
-      throw new IllegalStateException("while loading tasks", cause)
-
-    case stashMe: AnyRef =>
-      stash()
   }
 
   override def instanceConditionChanged(instanceId: Instance.Id): Unit = {
@@ -204,7 +183,7 @@ class TaskReplaceActor(
 
   // Careful not to make this method completely asynchronous - it changes local actor's state `instancesStarted`.
   // Only launching new instances needs to be asynchronous.
-  def launchInstances(): Future[Done] = {
+  def launchInstances(instances: Seq[Instance]): Future[Done] = {
     val leftCapacity = math.max(0, ignitionStrategy.maxCapacity - oldInstanceIds.size - instancesStarted)
     val instancesNotStartedYet = math.max(0, runSpec.instances - instancesStarted)
     val instancesToStartNow = math.min(instancesNotStartedYet, leftCapacity)
@@ -212,10 +191,8 @@ class TaskReplaceActor(
       logger.info(s"Reconciling instances during app $pathId restart: queuing $instancesToStartNow new instances")
       instancesStarted += instancesToStartNow
       async {
-        val allInstances = await(scheduler.getInstances(runSpec.id))
-
         // Reschedule stopped resident instances first.
-        val existingReservedStoppedInstances = allInstances
+        val existingReservedStoppedInstances = instances
           .filter(i => i.isReserved && i.state.goal == Goal.Stopped) // resident to relaunch
           .take(instancesToStartNow)
         await(scheduler.reschedule(existingReservedStoppedInstances, runSpec))
@@ -272,8 +249,8 @@ object TaskReplaceActor extends StrictLogging {
 
   object CheckFinished
 
-  case class Frame(instances: Seq[Instance])
-  case object LaunchDone
+  case class Frame(instances: Seq[Instance], event: InstanceChanged)
+  case object NoMoreFrames
 
   //scalastyle:off
   def props(
