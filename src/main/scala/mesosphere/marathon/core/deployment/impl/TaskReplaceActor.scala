@@ -6,7 +6,7 @@ import akka.actor._
 import akka.event.EventStream
 import akka.pattern._
 import akka.stream.{ActorMaterializer, OverflowStrategy}
-import akka.stream.scaladsl.{Sink, Source}
+import akka.stream.scaladsl.Sink
 import com.typesafe.scalalogging.StrictLogging
 import mesosphere.marathon.core.event._
 import mesosphere.marathon.core.instance.{Goal, Instance}
